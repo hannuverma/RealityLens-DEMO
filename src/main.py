@@ -1,31 +1,18 @@
 import os
 import sys
 
-
-
-def resource_path(relative_path):
-    """ Get absolute path to resource, works for dev and for PyInstaller """
-    try:
-        # PyInstaller creates a temp folder and stores path in _MEIPASS
-        base_path = sys._MEIPASS
-    except Exception:
-        base_path = os.path.abspath(".")
-    return os.path.join(base_path, relative_path)
-
-# This must run BEFORE from PyQt6 import ...
 if getattr(sys, 'frozen', False):
-    # sys._MEIPASS is the temporary folder where the EXE extracts itself
     base_path = sys._MEIPASS
-    # This path must match exactly where you found the DLLs earlier
-    qt_bin_path = os.path.join(base_path, '_internal', 'PyQt6', 'Qt6', 'bin')
+    # We try three different common locations where PyQt6 hides DLLs
+    possible_bin_paths = [
+        os.path.join(base_path, 'PyQt6', 'Qt6', 'bin'),
+        os.path.join(base_path, '_internal', 'PyQt6', 'Qt6', 'bin'),
+        os.path.join(base_path, 'PyQt6', 'plugins', 'platforms'),
+    ]
     
-    if os.path.exists(qt_bin_path):
-        os.add_dll_directory(qt_bin_path)
-    else:
-        # Fallback for different PyInstaller versions
-        alt_path = os.path.join(base_path, 'PyQt6', 'Qt6', 'bin')
-        if os.path.exists(alt_path):
-            os.add_dll_directory(alt_path)
+    for bin_path in possible_bin_paths:
+        if os.path.exists(bin_path):
+            os.add_dll_directory(bin_path)
 
 import keyboard
 from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QMenu, QWidget
