@@ -2,7 +2,6 @@ import os
 import re
 from pathlib import Path
 import sys
-import sys
 
 from PyQt6.QtCore import QObject, QTimer, Qt, pyqtSignal
 from PyQt6.QtWidgets import (
@@ -11,8 +10,7 @@ from PyQt6.QtWidgets import (
 	QLabel,
 	QProgressBar,
 	QPushButton,
-	QSlider,
-	QTextEdit,
+	QTextBrowser,
 	QVBoxLayout,
 	QWidget,
 )
@@ -27,6 +25,16 @@ def resource_path(relative_path):
 
 from ai_client import verify_content
 
+import json
+
+def try_parse_json(data):
+    if isinstance(data, dict):
+        return data
+    try:
+        return json.loads(data)
+    except Exception:
+        return None
+
 
 STYLE_PATH = Path(resource_path(os.path.join("src", "ui", "style.qss")))
 	
@@ -39,25 +47,71 @@ def _load_popup_style(accent_color: str) -> str:
 	return style_text.replace("__ACCENT__", accent_color)
 
 
-def extract_confidence_score(text: str) -> int:
-	match = re.search(r"confidence\s*score\s*[:\-]?\s*([0-9]{1,3})", text, re.IGNORECASE)
-	if not match:
-		match = re.search(r"\b([0-9]{1,3})\s*/\s*100\b", text)
-	if not match:
-		return 50
-	value = int(match.group(1))
-	return max(0, min(100, value))
+def _to_percent(raw: object) -> int | None:
+	try:
+		value = float(raw)
+	except (TypeError, ValueError):
+		return None
+	if value <= 1:
+		value *= 100
+	return max(0, min(100, int(round(value))))
+
+
+def extract_scores(text: str) -> tuple[int, int]:
+	data = try_parse_json(text)
+	reality_score = None
+	confidence_score = None
+
+	if data:
+		reality_score = _to_percent(data.get("reality_score"))
+		confidence_score = _to_percent(data.get("confidence"))
+
+	if reality_score is None and isinstance(text, str):
+		match = re.search(r"reality\s*score\s*[:\-]?\s*([0-9]+(?:\.[0-9]+)?)", text, re.IGNORECASE)
+		if match:
+			reality_score = _to_percent(match.group(1))
+
+	if confidence_score is None and isinstance(text, str):
+		match = re.search(r"confidence\s*score\s*[:\-]?\s*([0-9]+(?:\.[0-9]+)?)", text, re.IGNORECASE)
+		if match:
+			confidence_score = _to_percent(match.group(1))
+
+	if reality_score is None:
+		reality_score = confidence_score if confidence_score is not None else 50
+
+	if confidence_score is None:
+		confidence_score = reality_score
+
+	return reality_score, confidence_score
 
 
 def extract_verdict_label(text: str) -> str:
-	lowered = text.lower()
-	if "likely fake" in lowered or "fake" in lowered:
-		return "Likely Fake"
-	if "suspicious" in lowered:
-		return "Suspicious"
-	if "likely real" in lowered or "real" in lowered:
+    data = try_parse_json(text)
+
+    if data and "verdict" in data:
+        return data["verdict"]
+
+    lowered = text.lower()
+    
+    if "likely fake" in lowered:
+        return "Likely Fake"
+
+    if "suspicious" in lowered:
+        return "Suspicious"
+
+    if "likely real" in lowered:
+        return "Likely Real"
+    
+
+    return "Analysis Complete"
+
+
+def verdict_from_score(score: int) -> str:
+	if score > 75:
 		return "Likely Real"
-	return "Analysis Complete"
+	if score >= 40:
+		return "Suspicious"
+	return "Likely Fake"
 
 
 def verdict_color(text: str) -> str:
@@ -71,16 +125,67 @@ def verdict_color(text: str) -> str:
 	return "#00FFFF"
 
 
+def accent_for_verdict(verdict: str) -> str:
+	if verdict == "Likely Fake":
+		return "#FF4B4B"
+	if verdict == "Suspicious":
+		return "#FFD700"
+	if verdict == "Likely Real":
+		return "#00FF7F"
+	return "#00FFFF"
+
+
+def _section_value(text: str, key: str) -> str:
+	match = re.search(rf"{re.escape(key)}\s*[:\-]\s*(.+)", text, re.IGNORECASE)
+	return match.group(1).strip() if match else ""
+
+
+def build_readable_markdown(text: str, confidence: int, reality: int, verdict: str) -> str:
+    data = try_parse_json(text)
+
+    if data:
+        claim = data.get("claim", "")
+        explanation = data.get("explanation", "")
+        evidence = data.get("evidence", [])
+
+        lines = [
+            "## RealityLens Summary",
+            f"**Verdict:** {verdict}",
+            f"**Confidence:** {confidence}%",
+			f"**Reality:** {reality}%",
+        ]
+
+        if claim:
+            lines += ["", "### Claim", claim]
+
+        if explanation:
+            lines += ["", "### Explanation", explanation]
+
+        if evidence:
+            lines.append("")
+            lines.append("### Evidence")
+            for item in evidence:
+                title = item.get("title", "")
+                url = item.get("url", "")
+                lines.append(f"- [{title}]({url})")
+
+        return "\n".join(lines)
+
+    # fallback to your existing markdown 
+
+
 class AnalyzerWorker(QObject):
-	finished = pyqtSignal(str)
+    # Change 'str' to 'object' to allow dictionaries
+    finished = pyqtSignal(object) 
 
-	def __init__(self, image_path: str):
-		super().__init__()
-		self.image_path = image_path
+    def __init__(self, image_path: str):
+        super().__init__()
+        self.image_path = image_path
 
-	def run(self):
-		result = verify_content(self.image_path)
-		self.finished.emit(result)
+    def run(self):
+        # verify_content now returns a dict, which 'object' accepts
+        result = verify_content(self.image_path)
+        self.finished.emit(result)
 
 
 class AnchoredPopup(QWidget):
@@ -138,12 +243,20 @@ class LoadingPopup(AnchoredPopup):
 
 
 class ResultPopup(AnchoredPopup):
-	def __init__(self, text: str):
-		super().__init__()
-		self.result_text = text
-		self.border_color = verdict_color(text)
-		confidence = extract_confidence_score(text)
-		verdict = extract_verdict_label(text)
+	def __init__(self, data: object):
+		super().__init__()    
+        
+		if isinstance(data, dict):
+			self.result_text = json.dumps(data, indent=2)
+		else:
+			self.result_text = str(data)
+
+		reality_score, confidence_score = extract_scores(data)
+		parsed_verdict = extract_verdict_label(data)
+		if parsed_verdict == "Analysis Complete":
+			parsed_verdict = verdict_from_score(reality_score)
+		self.display_verdict = parsed_verdict
+		self.border_color = accent_for_verdict(parsed_verdict)
 
 		self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.WindowStaysOnTopHint)
 		self.setWindowTitle("RealityLens Verdict")
@@ -166,39 +279,52 @@ class ResultPopup(AnchoredPopup):
 		title.setObjectName("TitleLabel")
 		content_layout.addWidget(title)
 
-		subtitle = QLabel(f"{verdict} • Confidence {confidence}%")
-		subtitle.setObjectName("SubLabel")
-		content_layout.addWidget(subtitle)
+		self.subtitle = QLabel("")
+		self.subtitle.setObjectName("SubLabel")
+		content_layout.addWidget(self.subtitle)
 
-		slider_row = QHBoxLayout()
-		confidence_label = QLabel("Confidence")
+		reality_row = QHBoxLayout()
+		reality_label = QLabel("Reality Score")
+		reality_label.setObjectName("SubLabel")
+		reality_row.addWidget(reality_label)
+
+		self.reality_meter = QProgressBar()
+		self.reality_meter.setObjectName("TrustMeter")
+		self.reality_meter.setRange(0, 100)
+		self.reality_meter.setValue(reality_score)
+		self.reality_meter.setTextVisible(False)
+		self.reality_meter.setToolTip("Model reality score")
+		reality_row.addWidget(self.reality_meter, 1)
+
+		self.reality_score_label = QLabel("")
+		self.reality_score_label.setObjectName("SubLabel")
+		reality_row.addWidget(self.reality_score_label)
+		content_layout.addLayout(reality_row)
+
+		confidence_row = QHBoxLayout()
+		confidence_label = QLabel("Confidence Score")
 		confidence_label.setObjectName("SubLabel")
-		slider_row.addWidget(confidence_label)
+		confidence_row.addWidget(confidence_label)
 
-		confidence_slider = QSlider(Qt.Orientation.Horizontal)
-		confidence_slider.setObjectName("ConfidenceSlider")
-		confidence_slider.setRange(0, 100)
-		confidence_slider.setValue(confidence)
-		confidence_slider.setEnabled(False)
-		slider_row.addWidget(confidence_slider, 1)
+		self.confidence_meter = QProgressBar()
+		self.confidence_meter.setObjectName("TrustMeter")
+		self.confidence_meter.setRange(0, 100)
+		self.confidence_meter.setValue(confidence_score)
+		self.confidence_meter.setTextVisible(False)
+		self.confidence_meter.setToolTip("Model confidence score")
+		confidence_row.addWidget(self.confidence_meter, 1)
 
-		score_label = QLabel(f"{confidence}%")
-		score_label.setObjectName("SubLabel")
-		slider_row.addWidget(score_label)
-		content_layout.addLayout(slider_row)
+		self.confidence_score_label = QLabel("")
+		self.confidence_score_label.setObjectName("SubLabel")
+		confidence_row.addWidget(self.confidence_score_label)
+		content_layout.addLayout(confidence_row)
 
-		meter = QProgressBar()
-		meter.setObjectName("TrustMeter")
-		meter.setRange(0, 100)
-		meter.setValue(confidence)
-		meter.setFormat(f"Trust Meter: {confidence}%")
-		content_layout.addWidget(meter)
-
-		body = QTextEdit()
-		body.setObjectName("BodyEdit")
-		body.setReadOnly(True)
-		body.setPlainText(text)
-		content_layout.addWidget(body, 1)
+		self.body = QTextBrowser()
+		self.body.setObjectName("BodyEdit")
+		self.body.setOpenExternalLinks(True)
+		self.body.setReadOnly(True)
+		self.body.setMarkdown(build_readable_markdown(data, confidence_score, reality_score, parsed_verdict))
+		content_layout.addWidget(self.body, 1)
 
 		actions_layout = QHBoxLayout()
 		copy_btn = QPushButton("Copy")
@@ -212,4 +338,13 @@ class ResultPopup(AnchoredPopup):
 		content_layout.addLayout(actions_layout)
 
 		main_layout.addWidget(root)
+		self.on_scores_changed(reality_score, confidence_score)
 		self.move_to_bottom_right()
+
+	def on_scores_changed(self, reality: int, confidence: int):
+		verdict = getattr(self, "display_verdict", verdict_from_score(reality))
+		self.subtitle.setText(f"{verdict} • Reality {reality}% • Confidence {confidence}%")
+		self.reality_meter.setValue(reality)
+		self.confidence_meter.setValue(confidence)
+		self.reality_score_label.setText(f"{reality}%")
+		self.confidence_score_label.setText(f"{confidence}%")
