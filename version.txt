@@ -21,12 +21,12 @@ VSVersionInfo(
         [
         StringStruct(u'CompanyName', u'RealityLens'),
         StringStruct(u'FileDescription', u'RealityLens AI Fact Checker'),
-        StringStruct(u'FileVersion', u'2.0.0'),
+        StringStruct(u'FileVersion', u'2.1.0'),
         StringStruct(u'InternalName', u'RealityLens'),
         StringStruct(u'LegalCopyright', u'Copyright (c) 2026'),
         StringStruct(u'OriginalFilename', u'RealityLens.exe'),
         StringStruct(u'ProductName', u'RealityLens'),
-        StringStruct(u'ProductVersion', u'2.0.0')
+        StringStruct(u'ProductVersion', u'2.1.0')
         ])
       ]), 
     VarFileInfo([VarStruct(u'Translation', [1033, 1200])])

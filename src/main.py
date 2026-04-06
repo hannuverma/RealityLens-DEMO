@@ -23,7 +23,30 @@ from ui.components import ResultPopup, LoadingPopup, AnalyzerWorker
 
 os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "1"
 
+from PyQt6.QtCore import QAbstractNativeEventFilter
+import ctypes
+import ctypes.wintypes
 
+
+class WindowsPowerEventFilter(QAbstractNativeEventFilter):
+    def __init__(self, restart_callback):
+        super().__init__()
+        self.restart_callback = restart_callback
+
+    def nativeEventFilter(self, eventType, message):
+        if eventType == "windows_generic_MSG":
+            msg = ctypes.wintypes.MSG.from_address(int(message))
+
+            WM_POWERBROADCAST = 0x0218
+            PBT_APMRESUMEAUTOMATIC = 0x0012
+            PBT_APMRESUMESUSPEND = 0x0007
+
+            if msg.message == WM_POWERBROADCAST:
+                if msg.wParam in (PBT_APMRESUMEAUTOMATIC, PBT_APMRESUMESUSPEND):
+                    print("🔋 System resumed from sleep — restarting hotkeys")
+                    self.restart_callback()
+
+        return False, 0
 
 class HotkeySignal(QObject):
     trigger = pyqtSignal()
@@ -149,8 +172,13 @@ class SnippingOverlay(QWidget):
         self.result_window = ResultPopup(verdict_text)
         self.result_window.show()
 
+
+
 def main():
     # This MUST be the first thing that happens
+
+
+
     if sys.platform == 'win32':
         import ctypes
         # Use 2 for Per-Monitor DPI Awareness (Avoids the 'Access Denied' error)
@@ -164,7 +192,9 @@ def main():
     # Keep the app alive in the tray even when all windows are closed.
     app.setQuitOnLastWindowClosed(False)
 
+    
 
+    
     # 2. Setup System Tray
     tray = QSystemTrayIcon(app)
     # Note: You'll need a 'logo.png' in your folder or use a standard icon
@@ -187,13 +217,22 @@ def main():
         if SnippingOverlay.analysis_in_progress:
             print("RealityLens is still processing the previous selection. Please wait.")
             return
-
+        
         new_overlay = SnippingOverlay()
         overlay_container.append(new_overlay)
         new_overlay.show()
-
+    
+    def register_hotkeys():
+        keyboard.unhook_all()
+        keyboard.clear_all_hotkeys()
+        keyboard.add_hotkey('ctrl+shift+l', on_hotkey)
+        print("✅ Hotkeys registered")
+    
     hotkey_handler.trigger.connect(launch_ui)
-    keyboard.add_hotkey('ctrl+shift+l', on_hotkey)
+    register_hotkeys()
+
+    power_filter = WindowsPowerEventFilter(register_hotkeys)
+    app.installNativeEventFilter(power_filter)
 
     print("RealityLens is active. Press Ctrl+Shift+L to verify.")
     sys.exit(app.exec())
