@@ -36,6 +36,14 @@ def try_parse_json(data):
         return None
 
 
+def _as_text(value: object) -> str:
+	if value is None:
+		return ""
+	if isinstance(value, (dict, list)):
+		return json.dumps(value, ensure_ascii=False, indent=2)
+	return str(value)
+
+
 STYLE_PATH = Path(resource_path(os.path.join("src", "ui", "style.qss")))
 	
 
@@ -85,25 +93,27 @@ def extract_scores(text: str) -> tuple[int, int]:
 	return reality_score, confidence_score
 
 
-def extract_verdict_label(text: str) -> str:
-    data = try_parse_json(text)
+def extract_verdict_label(text: object) -> str:
+	data = try_parse_json(text)
 
-    if data and "verdict" in data:
-        return data["verdict"]
+	if data and "verdict" in data:
+		return str(data["verdict"])
 
-    lowered = text.lower()
-    
-    if "likely fake" in lowered:
-        return "Likely Fake"
+	if not isinstance(text, str):
+		return "Analysis Complete"
 
-    if "suspicious" in lowered:
-        return "Suspicious"
+	lowered = text.lower()
 
-    if "likely real" in lowered:
-        return "Likely Real"
-    
+	if "likely fake" in lowered:
+		return "Likely Fake"
 
-    return "Analysis Complete"
+	if "suspicious" in lowered:
+		return "Suspicious"
+
+	if "likely real" in lowered:
+		return "Likely Real"
+
+	return "Analysis Complete"
 
 
 def verdict_from_score(score: int) -> str:
@@ -140,38 +150,112 @@ def _section_value(text: str, key: str) -> str:
 	return match.group(1).strip() if match else ""
 
 
-def build_readable_markdown(text: str, confidence: int, reality: int, verdict: str) -> str:
-    data = try_parse_json(text)
+def _append_optional_line(lines: list[str], label: str, value: object) -> None:
+	text = _as_text(value).strip()
+	if text:
+		lines.append(f"**{label}:** {text}")
 
-    if data:
-        claim = data.get("claim", "")
-        explanation = data.get("explanation", "")
-        evidence = data.get("evidence", [])
 
-        lines = [
-            "## RealityLens Summary",
-            f"**Verdict:** {verdict}",
-            f"**Confidence:** {confidence}%",
+def _find_value(data: dict, keys: list[str]) -> object:
+	for key in keys:
+		if key in data:
+			return data[key]
+	return None
+
+
+def build_readable_markdown(text: object, confidence: int, reality: int, verdict: str) -> str:
+	data = try_parse_json(text)
+
+	if data:
+		claim = _find_value(data, ["claim", "core_claim"])
+		explanation = _find_value(data, ["explanation", "reasoning", "summary"])
+		evidence = data.get("evidence", [])
+		content_type = _find_value(data, ["content_type", "contentType"])
+		claim_source = _find_value(data, ["claim_source", "source_account", "source"])
+		claim_entities = _find_value(data, ["claim_entities", "entities"])
+		has_embedded_image = _find_value(data, ["has_embedded_image", "hasEmbeddedImage"])
+		platform_signals = _find_value(data, ["platform_signals", "platformSignals"])
+		extracted_text = _find_value(data, ["extracted_text", "ocr_text", "visible_text"])
+		flags = _find_value(data, ["flags", "red_flags"])
+		search_notes = _find_value(data, ["search_notes", "search_summary"])
+
+		lines = [
+			"## RealityLens Summary",
+			f"**Verdict:** {verdict}",
+			f"**Confidence:** {confidence}%",
 			f"**Reality:** {reality}%",
-        ]
+		]
 
-        if claim:
-            lines += ["", "### Claim", claim]
+		_append_optional_line(lines, "Content Type", content_type)
+		_append_optional_line(lines, "Claim Source", claim_source)
+		_append_optional_line(lines, "Has Embedded Image", has_embedded_image)
 
-        if explanation:
-            lines += ["", "### Explanation", explanation]
+		if claim_entities:
+			lines += ["", "### Claim Entities", _as_text(claim_entities)]
 
-        if evidence:
-            lines.append("")
-            lines.append("### Evidence")
-            for item in evidence:
-                title = item.get("title", "")
-                url = item.get("url", "")
-                lines.append(f"- [{title}]({url})")
+		if platform_signals:
+			lines += ["", "### Platform Signals", _as_text(platform_signals)]
 
-        return "\n".join(lines)
+		if claim:
+			lines += ["", "### Claim", _as_text(claim)]
 
-    # fallback to your existing markdown 
+		if explanation:
+			lines += ["", "### Explanation", _as_text(explanation)]
+
+		if extracted_text:
+			lines += ["", "### Extracted Text", _as_text(extracted_text)]
+
+		if flags:
+			lines += ["", "### Red Flags", _as_text(flags)]
+
+		if search_notes:
+			lines += ["", "### Search Notes", _as_text(search_notes)]
+
+		if evidence:
+			lines.append("")
+			lines.append("### Evidence")
+			for item in evidence:
+				if isinstance(item, dict):
+					title = str(item.get("title") or item.get("headline") or "Untitled source")
+					url = str(item.get("url") or "").strip()
+					stance = str(item.get("stance") or "").strip()
+					source = str(item.get("source") or "").strip()
+					details = " | ".join(part for part in [source, stance] if part)
+
+					if url:
+						line = f"- [{title}]({url})"
+					else:
+						line = f"- {title}"
+
+					if details:
+						line = f"{line} ({details})"
+					lines.append(line)
+				else:
+					lines.append(f"- {_as_text(item)}")
+
+		known_keys = {
+			"claim", "core_claim", "reality_score", "confidence", "verdict", "explanation", "reasoning", "summary",
+			"evidence", "content_type", "contentType", "claim_source", "source_account", "source",
+			"claim_entities", "entities", "has_embedded_image", "hasEmbeddedImage", "platform_signals",
+			"platformSignals", "extracted_text", "ocr_text", "visible_text", "flags", "red_flags",
+			"search_notes", "search_summary"
+		}
+		additional = {k: v for k, v in data.items() if k not in known_keys and v not in (None, "", [], {})}
+		if additional:
+			lines += ["", "### Additional Details", "```json", json.dumps(additional, ensure_ascii=False, indent=2), "```"]
+
+		return "\n".join(lines)
+
+	raw_text = _as_text(text).strip() or "No analysis details available."
+	return "\n".join([
+		"## RealityLens Summary",
+		f"**Verdict:** {verdict}",
+		f"**Confidence:** {confidence}%",
+		f"**Reality:** {reality}%",
+		"",
+		"### Raw Response",
+		raw_text,
+	])
 
 
 class AnalyzerWorker(QObject):
