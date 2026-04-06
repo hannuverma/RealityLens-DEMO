@@ -93,27 +93,36 @@ def extract_scores(text: str) -> tuple[int, int]:
 	return reality_score, confidence_score
 
 
+def _normalize_verdict_label(verdict: object) -> str:
+	text = str(verdict or "").strip().lower()
+	text = re.sub(r"[^a-z\s]", " ", text)
+	text = re.sub(r"\s+", " ", text).strip()
+
+	if "likely fake" in text:
+		return "Likely Fake"
+	if "suspicious" in text:
+		return "Suspicious"
+	if "likely real" in text:
+		return "Likely Real"
+	if "satire" in text or "parody" in text:
+		return "SATIRE"
+	if "unreadable" in text:
+		return "UNREADABLE"
+	if text:
+		return text.title()
+	return "Analysis Complete"
+
+
 def extract_verdict_label(text: object) -> str:
 	data = try_parse_json(text)
 
 	if data and "verdict" in data:
-		return str(data["verdict"])
+		return _normalize_verdict_label(data["verdict"])
 
 	if not isinstance(text, str):
 		return "Analysis Complete"
 
-	lowered = text.lower()
-
-	if "likely fake" in lowered:
-		return "Likely Fake"
-
-	if "suspicious" in lowered:
-		return "Suspicious"
-
-	if "likely real" in lowered:
-		return "Likely Real"
-
-	return "Analysis Complete"
+	return _normalize_verdict_label(text)
 
 
 def verdict_from_score(score: int) -> str:
@@ -125,7 +134,7 @@ def verdict_from_score(score: int) -> str:
 
 
 def verdict_color(text: str) -> str:
-	lowered = text.lower()
+	lowered = _normalize_verdict_label(text).lower()
 	if "fake" in lowered:
 		return "#FF4B4B"
 	if "suspicious" in lowered:
@@ -136,12 +145,17 @@ def verdict_color(text: str) -> str:
 
 
 def accent_for_verdict(verdict: str) -> str:
-	if verdict == "Likely Fake":
+	normalized = _normalize_verdict_label(verdict)
+	if normalized == "Likely Fake":
 		return "#FF4B4B"
-	if verdict == "Suspicious":
+	if normalized == "Suspicious":
 		return "#FFD700"
-	if verdict == "Likely Real":
+	if normalized == "Likely Real":
 		return "#00FF7F"
+	if normalized == "SATIRE":
+		return "#FF6BD6"
+	if normalized == "UNREADABLE":
+		return "#9AA4B2"
 	return "#00FFFF"
 
 

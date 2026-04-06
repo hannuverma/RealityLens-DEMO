@@ -117,6 +117,25 @@ def verify_content(image_path):
                     Is it a known outlet? A parody account? A newly created account?
                     Record credibility level: verified | unknown | known_misinformation | parody
 
+                    PHASE 3.5 · FAST VERDICT (check this before scoring)
+
+                    IF Search A finds 2 or more independent credible sources
+                    (Reuters, AP, AFP, BBC, major national outlets, official government sources)
+                    that confirm the core claim with matching details:
+
+                        → Set reality_score = 0.92
+                        → Set confidence based on source count:
+                            2 sources  → 0.82
+                            3 sources  → 0.88
+                            4+ sources → 0.93
+                        → Set verdict = "LIKELY REAL"
+                        → Skip phases 4A and 4B entirely
+                        → Write explanation citing the specific outlets found
+                        → Populate evidence array with those sources
+                        → Return the JSON immediately
+
+                    Only proceed to Phase 4A or 4B if this condition is NOT met.
+
                     PHASE 4A · MULTIMODAL SCORING
 
                     C = Image relevance to claim  [0.0–1.0]
