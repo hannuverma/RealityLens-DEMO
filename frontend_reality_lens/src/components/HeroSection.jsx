@@ -23,7 +23,12 @@ const HeroSection = () => {
 
 				<div className='mt-9 flex flex-col items-center gap-3 sm:flex-row'>
 					<button className='w-full rounded-full border border-indigo-300/60 bg-indigo-300 px-6 py-3 text-sm font-semibold text-indigo-950 transition hover:bg-indigo-200 sm:w-auto cursor-pointer'>
-						<a href='/src/download_File/RealityLens.exe' download>Download for Windows</a>
+						<a
+							href='https://github.com/hannuverma/RealityLens-DEMO/releases/download/v3/RealityLens.exe'
+							download
+						>
+							Download for Windows
+						</a>
 					</button>
 					<button className='w-full rounded-full border border-slate-500/70 bg-slate-900/80 px-6 py-3 text-sm font-semibold text-slate-100 transition hover:border-slate-400 sm:w-auto cursor-pointer'>
 						<a href='/src/download_File/RealityLens_Demo.exe'>Try Demo</a>
