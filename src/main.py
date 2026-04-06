@@ -1,23 +1,21 @@
 import os
 import sys
-
-if getattr(sys, 'frozen', False):
+import threading
+from PyQt6.QtCore import QTimer
+if sys.platform == "win32" and getattr(sys, 'frozen', False):
     base_path = sys._MEIPASS
-    # We try three different common locations where PyQt6 hides DLLs
     possible_bin_paths = [
         os.path.join(base_path, 'PyQt6', 'Qt6', 'bin'),
         os.path.join(base_path, '_internal', 'PyQt6', 'Qt6', 'bin'),
         os.path.join(base_path, 'PyQt6', 'plugins', 'platforms'),
     ]
-    
     for bin_path in possible_bin_paths:
         if os.path.exists(bin_path):
             os.add_dll_directory(bin_path)
 
-import keyboard
-from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QMenu, QWidget
+from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QMenu, QWidget, QMessageBox
 from PyQt6.QtGui import QPainter, QColor, QPen
-from PyQt6.QtCore import Qt, QRect, pyqtSignal, QObject, QThread, QTimer
+from PyQt6.QtCore import Qt, QRect, pyqtSignal, QObject, QThread
 import pyautogui
 from ui.components import ResultPopup, LoadingPopup, AnalyzerWorker
 
@@ -25,39 +23,67 @@ os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "1"
 
 from PyQt6.QtCore import QAbstractNativeEventFilter
 import ctypes
-import ctypes.wintypes
+
+if sys.platform == "win32":
+    import ctypes.wintypes
 
 
-class WindowsPowerEventFilter(QAbstractNativeEventFilter):
-    def __init__(self, restart_callback):
-        super().__init__()
-        self.restart_callback = restart_callback
+if sys.platform == "win32":
+    class WindowsPowerEventFilter(QAbstractNativeEventFilter):
+        def __init__(self, restart_callback):
+            super().__init__()
+            self.restart_callback = restart_callback
 
-    def nativeEventFilter(self, eventType, message):
-        if eventType == "windows_generic_MSG":
-            msg = ctypes.wintypes.MSG.from_address(int(message))
+        def nativeEventFilter(self, eventType, message):
+            if eventType == "windows_generic_MSG":
+                msg = ctypes.wintypes.MSG.from_address(int(message))
+                WM_POWERBROADCAST = 0x0218
+                PBT_APMRESUMEAUTOMATIC = 0x0012
+                PBT_APMRESUMESUSPEND = 0x0007
+                if msg.message == WM_POWERBROADCAST:
+                    if msg.wParam in (PBT_APMRESUMEAUTOMATIC, PBT_APMRESUMESUSPEND):
+                        print("🔋 System resumed from sleep — restarting hotkeys")
+                        self.restart_callback()
+            return False, 0
 
-            WM_POWERBROADCAST = 0x0218
-            PBT_APMRESUMEAUTOMATIC = 0x0012
-            PBT_APMRESUMESUSPEND = 0x0007
 
-            if msg.message == WM_POWERBROADCAST:
-                if msg.wParam in (PBT_APMRESUMEAUTOMATIC, PBT_APMRESUMESUSPEND):
-                    print("🔋 System resumed from sleep — restarting hotkeys")
-                    self.restart_callback()
+def check_mac_permissions():
+    """
+    Runs the accessibility check on macOS and shows a dialog if permissions
+    are missing. Called after QApplication is created so the dialog renders.
+    """
+    import subprocess
+    result = subprocess.run(
+        ['osascript', '-e', 'tell application "System Events" to get name of first process'],
+        capture_output=True
+    )
+    if result.returncode != 0:
+        msg = QMessageBox()
+        msg.setWindowTitle("Permissions Required")
+        msg.setIcon(QMessageBox.Icon.Warning)
+        msg.setText(
+            "RealityLens needs Accessibility & Screen Recording permissions.\n\n"
+            "Please go to:\n"
+            "System Settings → Privacy & Security → Accessibility\n"
+            "and add this app, then restart."
+        )
+        msg.exec()
 
-        return False, 0
 
 class HotkeySignal(QObject):
     trigger = pyqtSignal()
 
-        
+
 class SnippingOverlay(QWidget):
     analysis_in_progress = False
 
     def __init__(self):
         super().__init__()
-        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.Tool)
+        self.setWindowFlags(
+            Qt.WindowType.FramelessWindowHint |
+            Qt.WindowType.WindowStaysOnTopHint |
+            Qt.WindowType.Tool
+        )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setCursor(Qt.CursorShape.CrossCursor)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
@@ -65,7 +91,7 @@ class SnippingOverlay(QWidget):
         self.activateWindow()
         self.raise_()
         self.setFocus()
-        
+
         self.start_point = None
         self.end_point = None
         self.is_selecting = False
@@ -75,22 +101,17 @@ class SnippingOverlay(QWidget):
 
     def paintEvent(self, event):
         painter = QPainter(self)
-        # Draw a semi-transparent black overlay
         painter.fillRect(self.rect(), QColor(0, 0, 0, 100))
-        
+
         if self.is_selecting and self.start_point and self.end_point:
-            # "Cut out" the selection area (make it clear)
             selection_rect = QRect(self.start_point, self.end_point).normalized()
             painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Clear)
             painter.fillRect(selection_rect, Qt.GlobalColor.transparent)
-            
-            # Draw a border around the selection
             painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
             painter.setPen(QPen(QColor(0, 255, 255), 2, Qt.PenStyle.SolidLine))
             painter.drawRect(selection_rect)
 
     def mousePressEvent(self, event):
-        # globalPosition() gives absolute screen coordinates
         self.start_point = event.globalPosition().toPoint()
         self.end_point = self.start_point
         self.is_selecting = True
@@ -104,15 +125,12 @@ class SnippingOverlay(QWidget):
     def mouseReleaseEvent(self, event):
         self.is_selecting = False
         selection_rect = QRect(self.start_point, self.end_point).normalized()
-        
-        # These are the numbers we send to the Screen Capturer
         x, y, w, h = selection_rect.getRect()
         print(f"✅ Real Screen Coordinates: X={x}, Y={y}, W={w}, H={h}")
-        
-        # Check if selection is actually a box (prevent accidental clicks)
+
         if w > 5 and h > 5:
             self.capture_and_analyze(x, y, w, h)
-            
+
         self.close()
 
     def keyPressEvent(self, event):
@@ -120,7 +138,6 @@ class SnippingOverlay(QWidget):
             self.is_selecting = False
             self.close()
             return
-
         super().keyPressEvent(event)
 
     def showEvent(self, event):
@@ -137,11 +154,11 @@ class SnippingOverlay(QWidget):
             SnippingOverlay.analysis_in_progress = True
             self.hide()
             QApplication.processEvents()
-            
+
             screenshot = pyautogui.screenshot(region=(int(x), int(y), int(w), int(h)))
             save_path = "captured_claim.png"
             screenshot.save(save_path)
-            
+
             print("🧠 RealityLens is verifying...")
             self.loading_popup = LoadingPopup()
             self.loading_popup.show()
@@ -158,7 +175,7 @@ class SnippingOverlay(QWidget):
             self.analysis_thread.finished.connect(self.analysis_thread.deleteLater)
 
             self.analysis_thread.start()
-            
+
         except Exception as e:
             SnippingOverlay.analysis_in_progress = False
             print(f"❌ Error: {e}")
@@ -173,69 +190,77 @@ class SnippingOverlay(QWidget):
         self.result_window.show()
 
 
-
 def main():
-    # This MUST be the first thing that happens
-
-
-
     if sys.platform == 'win32':
-        import ctypes
-        # Use 2 for Per-Monitor DPI Awareness (Avoids the 'Access Denied' error)
-        ctypes.windll.shcore.SetProcessDpiAwareness(2) 
+        ctypes.windll.shcore.SetProcessDpiAwareness(2)
 
     QApplication.setHighDpiScaleFactorRoundingPolicy(
         Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
     )
-    
+
     app = QApplication(sys.argv)
-    # Keep the app alive in the tray even when all windows are closed.
     app.setQuitOnLastWindowClosed(False)
 
-    
+    # Mac permission check — runs here so QApplication exists for the dialog
+    if sys.platform == 'darwin':
+        check_mac_permissions()
 
-    
-    # 2. Setup System Tray
+    # System tray
     tray = QSystemTrayIcon(app)
-    # Note: You'll need a 'logo.png' in your folder or use a standard icon
     tray.setIcon(app.style().standardIcon(app.style().StandardPixmap.SP_ComputerIcon))
-    
     menu = QMenu()
     exit_action = menu.addAction("Exit RealityLens")
     exit_action.triggered.connect(app.quit)
     tray.setContextMenu(menu)
     tray.show()
 
-    # 3. Setup Hotkey Listener
     hotkey_handler = HotkeySignal()
-    overlay_container = [] # Keep reference to prevent garbage collection
+    
+    # Holds the ONE active overlay. Cleared when it closes so no memory leak.
 
     def on_hotkey():
         hotkey_handler.trigger.emit()
 
+    pressed_keys = set()
+
+    from pynput import keyboard
+
+    def start_hotkey_listener():
+        hotkeys = {
+            '<ctrl>+<shift>+l': on_hotkey,   # Windows / Linux
+            '<cmd>+<shift>+l': on_hotkey     # macOS
+        }
+
+        with keyboard.GlobalHotKeys(hotkeys) as listener:
+            listener.join()
+
+
+    active_overlays = []
+
     def launch_ui():
         if SnippingOverlay.analysis_in_progress:
-            print("RealityLens is still processing the previous selection. Please wait.")
             return
-        
-        new_overlay = SnippingOverlay()
-        overlay_container.append(new_overlay)
-        new_overlay.show()
-    
-    def register_hotkeys():
-        keyboard.unhook_all()
-        keyboard.clear_all_hotkeys()
-        keyboard.add_hotkey('ctrl+shift+l', on_hotkey)
-        print("✅ Hotkeys registered")
-    
-    hotkey_handler.trigger.connect(launch_ui)
-    register_hotkeys()
 
-    power_filter = WindowsPowerEventFilter(register_hotkeys)
-    app.installNativeEventFilter(power_filter)
+        def create_overlay():
+            overlay = SnippingOverlay()
+            active_overlays.append(overlay)
+            overlay.destroyed.connect(lambda: active_overlays.remove(overlay))
+            overlay.show()
+
+        QTimer.singleShot(0, create_overlay)
+
+    hotkey_handler.trigger.connect(launch_ui)
+
+    hotkey_thread = threading.Thread(target=start_hotkey_listener, daemon=True)
+    hotkey_thread.start()
+
+    if sys.platform == "win32":
+        power_filter = WindowsPowerEventFilter(start_hotkey_listener)
+        app.installNativeEventFilter(power_filter)
 
     print("RealityLens is active. Press Ctrl+Shift+L to verify.")
     sys.exit(app.exec())
+
 
 if __name__ == "__main__":
     main()

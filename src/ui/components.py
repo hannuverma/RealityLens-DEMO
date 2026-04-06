@@ -2,7 +2,7 @@ import os
 import re
 from pathlib import Path
 import sys
-
+from PyQt6.QtGui import QCursor
 from PyQt6.QtCore import QObject, QTimer, Qt, pyqtSignal
 from PyQt6.QtWidgets import (
 	QApplication,
@@ -16,12 +16,11 @@ from PyQt6.QtWidgets import (
 )
 
 def resource_path(relative_path):
-    try:
+    if hasattr(sys, "_MEIPASS"):
         base_path = sys._MEIPASS
-    except Exception:
-        base_path = os.path.abspath(".")
+    else:
+        base_path = os.path.dirname(os.path.abspath(__file__))
     return os.path.join(base_path, relative_path)
-	
 
 from ai_client import verify_content
 
@@ -44,7 +43,10 @@ def _as_text(value: object) -> str:
 	return str(value)
 
 
-STYLE_PATH = Path(resource_path(os.path.join("src", "ui", "style.qss")))
+if hasattr(sys, "_MEIPASS"):
+	STYLE_PATH = Path(sys._MEIPASS) / "src" / "ui" / "style.qss"
+else:
+	STYLE_PATH = Path(__file__).with_name("style.qss")
 	
 
 def _load_popup_style(accent_color: str) -> str:
@@ -288,7 +290,7 @@ class AnalyzerWorker(QObject):
 
 class AnchoredPopup(QWidget):
 	def move_to_bottom_right(self, margin: int = 20):
-		screen = QApplication.primaryScreen()
+		screen = QApplication.screenAt(QCursor.pos()) or QApplication.primaryScreen()
 		if not screen:
 			return
 		area = screen.availableGeometry()

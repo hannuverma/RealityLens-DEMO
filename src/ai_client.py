@@ -8,14 +8,16 @@ from dotenv import load_dotenv
 import json
 
 def resource_path(relative_path):
-    try:
-        base_path = sys._MEIPASS
-    except Exception:
-        base_path = os.path.abspath(".")
+    base_path = getattr(sys, "_MEIPASS", os.path.abspath("."))
     return os.path.join(base_path, relative_path)
 
 
-load_dotenv(resource_path(".env"))
+env_path = resource_path(".env")
+if os.path.exists(env_path):
+    load_dotenv(env_path)
+else:
+    load_dotenv()
+
 
 api_key = os.getenv("GEMINI_API_KEY")
 
@@ -29,13 +31,15 @@ def verify_content(image_path):
 
     if not api_key:
         return "RealityLens config error: GEMINI_API_KEY is missing."
+    
+    if not os.path.exists(image_path):
+        return "RealityLens: Screenshot file not found."
 
     try:
-        img = Image.open(image_path)
-
-        img_byte_arr = io.BytesIO()
-        img.save(img_byte_arr, format='PNG')
-        img_bytes = img_byte_arr.getvalue()
+        with Image.open(image_path) as img:
+            img_byte_arr = io.BytesIO()
+            img.save(img_byte_arr, format="PNG")
+            img_bytes = img_byte_arr.getvalue()
 
         # 2. Create the Part object (This is the most stable way)
         image_part = types.Part.from_bytes(
@@ -273,9 +277,10 @@ def verify_content(image_path):
         )
         
         # 2. Add safety check for empty response
-        if not response.text:
+        if not response or not getattr(response, "text", None):
             return "RealityLens: AI returned an empty response."
-
+        
+        
         # 3. Clean the response (sometimes AI adds ```json ... ``` tags)
         raw_text = response.text.strip()
         if raw_text.startswith("```json"):
