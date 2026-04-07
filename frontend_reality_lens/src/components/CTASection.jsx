@@ -11,7 +11,7 @@ const CTASection = () => {
 				</p>
 				<button className='mt-8 rounded-full border border-indigo-300/60 bg-indigo-300 px-8 py-3 text-sm font-semibold text-indigo-950 transition hover:bg-indigo-200 cursor-pointer'>
 					<a
-						href='https://github.com/hannuverma/RealityLens-DEMO/releases/download/v3/RealityLens.exe'
+						href='https://github.com/hannuverma/RealityLens-DEMO/releases/download/V4/RealityLens.exe'
 						download
 					>
 						Download v1.0 for Windows
