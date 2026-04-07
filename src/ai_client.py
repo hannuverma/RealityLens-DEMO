@@ -19,7 +19,7 @@ else:
     load_dotenv()
 
 
-api_keys = os.getenv("GEMINI_API_KEYS", "").split(",")
+api_keys = os.getenv("GEMINI_API_KEY", "").split(",")
 api_keys = [k.strip() for k in api_keys if k.strip()]
 
 def find_working_key(api_keys):

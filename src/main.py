@@ -2,6 +2,7 @@ import os
 import sys
 import threading
 from PyQt6.QtCore import QTimer
+
 if sys.platform == "win32" and getattr(sys, 'frozen', False):
     base_path = sys._MEIPASS
     possible_bin_paths = [
@@ -27,7 +28,6 @@ import ctypes
 if sys.platform == "win32":
     import ctypes.wintypes
 
-
 if sys.platform == "win32":
     class WindowsPowerEventFilter(QAbstractNativeEventFilter):
         def __init__(self, restart_callback):
@@ -48,10 +48,6 @@ if sys.platform == "win32":
 
 
 def check_mac_permissions():
-    """
-    Runs the accessibility check on macOS and shows a dialog if permissions
-    are missing. Called after QApplication is created so the dialog renders.
-    """
     import subprocess
     result = subprocess.run(
         ['osascript', '-e', 'tell application "System Events" to get name of first process'],
@@ -79,18 +75,25 @@ class SnippingOverlay(QWidget):
 
     def __init__(self):
         super().__init__()
+
+        # Compute bounding rect across ALL screens
+        combined = QRect()
+        for screen in QApplication.screens():
+            combined = combined.united(screen.geometry())
+
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint |
             Qt.WindowType.WindowStaysOnTopHint |
-            Qt.WindowType.Tool
+            Qt.WindowType.Tool |
+            Qt.WindowType.BypassWindowManagerHint  # Prevents slide-in animation on macOS
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground)
         self.setCursor(Qt.CursorShape.CrossCursor)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        self.showFullScreen()
-        self.activateWindow()
-        self.raise_()
-        self.setFocus()
+
+        # Explicit geometry instead of showFullScreen() — fixes macOS black screen
+        self.setGeometry(combined)
 
         self.start_point = None
         self.end_point = None
@@ -99,14 +102,38 @@ class SnippingOverlay(QWidget):
         self.analysis_thread = None
         self.analysis_worker = None
 
+        self.show()
+        self.activateWindow()
+        self.raise_()
+        self.setFocus()
+
+    def _disable_window_animation_macos(self):
+        """Kill the slide-in animation via native AppKit call."""
+        if sys.platform == 'darwin':
+            try:
+                import objc
+                from AppKit import NSApplication, NSWindowAnimationBehaviorNone
+                ns_app = NSApplication.sharedApplication()
+                for win in ns_app.windows():
+                    if win.isVisible():
+                        win.setAnimationBehavior_(NSWindowAnimationBehaviorNone)
+            except Exception as e:
+                print(f"objc animation disable failed: {e}")
+
     def paintEvent(self, event):
         painter = QPainter(self)
-        painter.fillRect(self.rect(), QColor(0, 0, 0, 100))
+
+        # Dark overlay across full screen
+        painter.fillRect(self.rect(), QColor(0, 0, 0, 120))
 
         if self.is_selecting and self.start_point and self.end_point:
             selection_rect = QRect(self.start_point, self.end_point).normalized()
-            painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Clear)
-            painter.fillRect(selection_rect, Qt.GlobalColor.transparent)
+
+            # Punch a transparent hole — CompositionMode_Source works on macOS Metal
+            painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Source)
+            painter.fillRect(selection_rect, QColor(0, 0, 0, 0))
+
+            # Cyan border around selection
             painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
             painter.setPen(QPen(QColor(0, 255, 255), 2, Qt.PenStyle.SolidLine))
             painter.drawRect(selection_rect)
@@ -145,6 +172,8 @@ class SnippingOverlay(QWidget):
         self.activateWindow()
         self.raise_()
         self.setFocus()
+        if sys.platform == 'darwin':
+            self._disable_window_animation_macos()
 
     def capture_and_analyze(self, x, y, w, h):
         try:
@@ -154,6 +183,11 @@ class SnippingOverlay(QWidget):
             SnippingOverlay.analysis_in_progress = True
             self.hide()
             QApplication.processEvents()
+
+            # Give macOS compositor time to fully hide the overlay before screenshotting
+            if sys.platform == 'darwin':
+                import time
+                time.sleep(0.15)
 
             screenshot = pyautogui.screenshot(region=(int(x), int(y), int(w), int(h)))
             save_path = "captured_claim.png"
@@ -194,6 +228,16 @@ def main():
     if sys.platform == 'win32':
         ctypes.windll.shcore.SetProcessDpiAwareness(2)
 
+    # Must be set BEFORE QApplication is created on macOS
+    if sys.platform == 'darwin':
+        try:
+            from AppKit import NSApplication, NSApplicationActivationPolicyAccessory
+            NSApplication.sharedApplication().setActivationPolicy_(
+                NSApplicationActivationPolicyAccessory
+            )
+        except Exception as e:
+            print(f"Failed to set accessory policy: {e}")
+
     QApplication.setHighDpiScaleFactorRoundingPolicy(
         Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
     )
@@ -201,7 +245,6 @@ def main():
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
 
-    # Mac permission check — runs here so QApplication exists for the dialog
     if sys.platform == 'darwin':
         check_mac_permissions()
 
@@ -215,25 +258,19 @@ def main():
     tray.show()
 
     hotkey_handler = HotkeySignal()
-    
-    # Holds the ONE active overlay. Cleared when it closes so no memory leak.
 
     def on_hotkey():
         hotkey_handler.trigger.emit()
-
-    pressed_keys = set()
 
     from pynput import keyboard
 
     def start_hotkey_listener():
         hotkeys = {
-            '<ctrl>+<shift>+l': on_hotkey,   # Windows / Linux
-            '<cmd>+<shift>+l': on_hotkey     # macOS
+            '<ctrl>+<shift>+l': on_hotkey,
+            '<cmd>+<shift>+l': on_hotkey
         }
-
         with keyboard.GlobalHotKeys(hotkeys) as listener:
             listener.join()
-
 
     active_overlays = []
 
@@ -245,7 +282,6 @@ def main():
             overlay = SnippingOverlay()
             active_overlays.append(overlay)
             overlay.destroyed.connect(lambda: active_overlays.remove(overlay))
-            overlay.show()
 
         QTimer.singleShot(0, create_overlay)
 
@@ -258,7 +294,7 @@ def main():
         power_filter = WindowsPowerEventFilter(start_hotkey_listener)
         app.installNativeEventFilter(power_filter)
 
-    print("RealityLens is active. Press Ctrl+Shift+L to verify.")
+    print("RealityLens is active. Press Ctrl+Shift+L (Win/Linux) or Cmd+Shift+L (Mac) to verify.")
     sys.exit(app.exec())
 
 
