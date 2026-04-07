@@ -19,15 +19,47 @@ else:
     load_dotenv()
 
 
-api_key = os.getenv("GEMINI_API_KEY")
+api_keys = os.getenv("GEMINI_API_KEYS", "").split(",")
+api_keys = [k.strip() for k in api_keys if k.strip()]
 
-client = genai.Client(
-    api_key=api_key,
-    http_options=types.HttpOptions(api_version='v1beta')
-)
+def find_working_key(api_keys):
+    for key in api_keys:
+        try:
+            client = genai.Client(
+                api_key=key,
+                http_options=types.HttpOptions(api_version='v1beta')
+            )
 
+            response = client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents="OK"
+            )
 
+            if response.text:
+                return key
+
+        except Exception as e:
+            err = str(e)
+
+            if "429" in err or "RESOURCE_EXHAUSTED" in err:
+                continue
+            else:
+                continue
+
+    return None
 def verify_content(image_path):
+
+    api_key = find_working_key(api_keys)
+
+    if not api_key:
+        return "All API keys exhausted."
+
+
+    client = genai.Client(
+        api_key=api_key,
+        http_options=types.HttpOptions(api_version='v1beta')
+    )
+
 
     if not api_key:
         return "RealityLens config error: GEMINI_API_KEY is missing."
@@ -280,7 +312,7 @@ def verify_content(image_path):
         if not response or not getattr(response, "text", None):
             return "RealityLens: AI returned an empty response."
         
-        
+
         # 3. Clean the response (sometimes AI adds ```json ... ``` tags)
         raw_text = response.text.strip()
         if raw_text.startswith("```json"):
