@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 # Make sure your .env has GEMINI_API_KEY=AIza...
-client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))  
+client = genai.Client(api_key=os.getenv("GEMINI_API_KEY_1"))  
 
 def test_connection():
     print("🚀 Attempting connection with Stable Flash 1.5...")

@@ -4,8 +4,8 @@
 
 VSVersionInfo(
   ffi=FixedFileInfo(
-    filevers=(4,0,0,0),
-    prodvers=(4,0,0,0),
+    filevers=(5,0,0,0),
+    prodvers=(5,0,0,0),
     mask=0x3f,
     flags=0x0,
     OS=0x40004,
@@ -21,12 +21,12 @@ VSVersionInfo(
         [
         StringStruct(u'CompanyName', u'RealityLens'),
         StringStruct(u'FileDescription', u'RealityLens AI Fact Checker'),
-        StringStruct(u'FileVersion', u'4.2.0'),
+        StringStruct(u'FileVersion', u'5.0.0'),
         StringStruct(u'InternalName', u'RealityLens'),
         StringStruct(u'LegalCopyright', u'Copyright (c) 2026'),
         StringStruct(u'OriginalFilename', u'RealityLens.exe'),
         StringStruct(u'ProductName', u'RealityLens'),
-        StringStruct(u'ProductVersion', u'4.2.0')
+        StringStruct(u'ProductVersion', u'5.0.0')
         ])
       ]), 
     VarFileInfo([VarStruct(u'Translation', [1033, 1200])])
