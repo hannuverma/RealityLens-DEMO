@@ -1,5 +1,6 @@
 import sys
 import io
+from time import time
 from google import genai
 from google.genai import types # Added for versioning
 import os
@@ -21,6 +22,8 @@ else:
 
 api_keys = os.getenv("GEMINI_API_KEY", "").split(",")
 api_keys = [k.strip() for k in api_keys if k.strip()]
+
+current_situation = "Please wait while we analyze the capture..."
 
 prompt = """
                     You are a news credibility analyst. You will receive a screenshot taken by a user.
@@ -236,6 +239,8 @@ prompt = """
 
 
 def verify_content(image_path):
+    global current_situation
+
     if not api_keys:
         return "RealityLens config error: GEMINI_API_KEY is missing."
 
@@ -254,50 +259,71 @@ def verify_content(image_path):
     search_tool = types.Tool(google_search=types.GoogleSearch())
     config = types.GenerateContentConfig(tools=[search_tool])
 
+    import time
+
+    MAX_RETRIES = 3
     last_error = "All API keys exhausted."
 
+    MODELS = [
+        "gemini-2.5-flash",
+        "gemini-2.0-flash",
+        "gemini-2.0-flash-lite",
+        ]
+
     for key in api_keys:
-        try:
-            client = genai.Client(
-                api_key=key,
-                http_options=types.HttpOptions(api_version='v1beta')
-            )
+        for model in MODELS:
+            for attempt in range(MAX_RETRIES):
+                try:
+                    client = genai.Client(
+                        api_key=key,
+                        http_options=types.HttpOptions(api_version='v1beta')
+                    )
 
-            print(f"🤖 Sending content to AI for analysis...")
-            response = client.models.generate_content(
-                model="gemini-2.5-flash",
-                contents=[prompt, image_part],
-                config=config
-            )
+                    print(f"🤖 Trying {model} (attempt {attempt + 1})")
+                    response = client.models.generate_content(
+                        model=model,
+                        contents=[prompt, image_part],
+                        config=config
+                    )
 
-            if not response or not getattr(response, "text", None):
-                last_error = "AI returned an empty response."
-                continue
+                    if not response or not getattr(response, "text", None):
+                        last_error = "AI returned an empty response."
+                        break
 
-            raw_text = response.text.strip()
-            if raw_text.startswith("```json"):
-                raw_text = raw_text.replace("```json", "", 1).replace("```", "", 1).strip()
-            elif raw_text.startswith("```"):
-                raw_text = raw_text.replace("```", "", 2).strip()
+                    raw_text = response.text.strip()
+                    if raw_text.startswith("```json"):
+                        raw_text = raw_text.replace("```json", "", 1).replace("```", "", 1).strip()
+                    elif raw_text.startswith("```"):
+                        raw_text = raw_text.replace("```", "", 2).strip()
 
-            try:
-                result = json.loads(raw_text)
-                print(result)
-                return result
-            except json.JSONDecodeError:
-                print("❌ JSON Parse Error. Raw text follows:")
-                print(raw_text)
-                return {"error": "AI failed to return valid JSON", "raw": raw_text}
+                    try:
+                        result = json.loads(raw_text)
+                        print(result)
+                        return result
+                    except json.JSONDecodeError:
+                        print("❌ JSON Parse Error:", raw_text)
+                        return {"error": "AI failed to return valid JSON", "raw": raw_text}
 
-        except Exception as e:
-            err = str(e)
-            if "429" in err or "RESOURCE_EXHAUSTED" in err:
-                print(f"⚠️ Key quota exhausted, trying next key...")
-                last_error = "All API keys quota exhausted. Please wait 60 seconds and try again."
-                continue
-            else:
-                print(f"⚠️ Key failed ({err}), trying next...")
-                last_error = f"AI Error: {err}"
-                continue
+                except Exception as e:
+                    err = str(e)
+                    if "429" in err or "RESOURCE_EXHAUSTED" in err:
+                        print(f"⚠️ Quota exhausted on {model}, moving on...")
+                        last_error = "All API keys quota exhausted. Please wait 60 seconds."
+                        break  # next model
+                    elif "503" in err or "UNAVAILABLE" in err:
+                        if attempt < MAX_RETRIES - 1:
+                            wait = 5 * (attempt + 1)
+                            print(f"⚠️ {model} overloaded, retrying in {wait}s...")
+                            current_situation = f" the model is currently overloaded. Retrying in {wait} seconds. Sorry for the delay!"
+                            time.sleep(wait)
+                        else:
+                            print(f"⚠️ {model} still failing, trying next model...")
+                            current_situation = f" the model is currently unavailable. Trying next model..."
+                            last_error = f"{model} unavailable."
+                            break  # next model
+                    else:
+                        print(f"⚠️ Error on {model}: {err}")
+                        last_error = f"AI Error: {err}"
+                        break  # next model
 
     return last_error

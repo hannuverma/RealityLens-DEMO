@@ -3,7 +3,10 @@ import os
 from dotenv import load_dotenv
 
 load_dotenv()
-client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+
+
+
+client = genai.Client(api_key="AIzaSyDRfKA1XFcIRg_qlMe79KsATNxh1fUwORM")
 
 print("MODELS ACCESSIBLE TO YOUR KEY:")
 for m in client.models.list():

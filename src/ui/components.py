@@ -14,6 +14,8 @@ from PyQt6.QtWidgets import (
 	QVBoxLayout,
 	QWidget,
 )
+import ai_client
+
 
 def resource_path(relative_path):
     if hasattr(sys, "_MEIPASS"):
@@ -319,9 +321,9 @@ class LoadingPopup(AnchoredPopup):
 		self.title.setObjectName("LoadingTitle")
 		root_layout.addWidget(self.title)
 
-		hint = QLabel("Please wait while we analyze the capture...")
-		hint.setObjectName("LoadingHint")
-		root_layout.addWidget(hint)
+		self.hint = QLabel(ai_client.current_situation)
+		self.hint.setObjectName("LoadingHint")
+		root_layout.addWidget(self.hint)
 
 		progress = QProgressBar()
 		progress.setObjectName("LoadingBar")
@@ -340,6 +342,7 @@ class LoadingPopup(AnchoredPopup):
 	def _tick(self):
 		self.dot_step = (self.dot_step + 1) % 4
 		self.title.setText(f"RealityLens is verifying{'.' * self.dot_step}")
+		self.hint.setText(ai_client.current_situation)
 
 
 class ResultPopup(AnchoredPopup):
