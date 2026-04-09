@@ -7,6 +7,8 @@ import os
 from PIL import Image
 from dotenv import load_dotenv
 import json
+import random
+
 
 def resource_path(relative_path):
     base_path = getattr(sys, "_MEIPASS", os.path.abspath("."))
@@ -25,6 +27,13 @@ api_keys = [k.strip() for k in api_keys if k.strip()]
 
 current_situation = "Please wait while we analyze the capture..."
 
+
+def _set_current_situation(message, on_status=None):
+    global current_situation
+    current_situation = message
+    if on_status:
+        on_status(message)
+
 prompt = """
                     You are a news credibility analyst. You will receive a screenshot taken by a user.
                     The screenshot is a secondary source — it may contain text, a photo, a social media post,
@@ -34,6 +43,8 @@ prompt = """
                     that may have already been edited, cropped, or taken out of context.
 
                     Follow this methodology:
+
+                    if the screenshot is too blurry, cropped, or low-quality to extract a clear claim, return UNREADABLE with an explanation and leave the rest of the fields empty.
 
                     PHASE 1 · PARSE THE SCREENSHOT
 
@@ -238,7 +249,7 @@ prompt = """
 
 
 
-def verify_content(image_path):
+def verify_content(image_path, on_status=None):
     global current_situation
 
     if not api_keys:
@@ -249,15 +260,26 @@ def verify_content(image_path):
 
     try:
         with Image.open(image_path) as img:
+            # Resize if too large — Gemini doesn't need full resolution for text analysis
+            if img.width > 1280 or img.height > 1280:
+                img.thumbnail((1280, 1280), Image.Resampling.LANCZOS)
+            
             img_byte_arr = io.BytesIO()
-            img.save(img_byte_arr, format="PNG")
+            # Use JPEG instead of PNG — much smaller file size
+            img = img.convert("RGB")  # JPEG doesn't support transparency
+            img.save(img_byte_arr, format="JPEG", quality=85)
             img_bytes = img_byte_arr.getvalue()
+            
+            print(f"📦 Image size: {len(img_bytes) / 1024:.1f} KB")
     except Exception as e:
         return f"RealityLens: Failed to read image — {e}"
 
-    image_part = types.Part.from_bytes(data=img_bytes, mime_type="image/png")
+    image_part = types.Part.from_bytes(data=img_bytes, mime_type="image/jpeg")
+    
+    # Try with search tool first, fall back to without if it causes 503
     search_tool = types.Tool(google_search=types.GoogleSearch())
-    config = types.GenerateContentConfig(tools=[search_tool])
+    config_with_search = types.GenerateContentConfig(tools=[search_tool])
+    config_no_search = types.GenerateContentConfig()
 
     import time
 
@@ -265,25 +287,26 @@ def verify_content(image_path):
     last_error = "All API keys exhausted."
 
     MODELS = [
-        "gemini-2.5-flash",
-        "gemini-2.0-flash",
-        "gemini-2.0-flash-lite",
-        ]
+                "gemini-2.5-flash",
+              ]
 
-    for key in api_keys:
+    keys_to_try = api_keys[:]
+    random.shuffle(keys_to_try)
+
+    for key in keys_to_try:
+        # Try with search tool first, then without as fallback
+
         for model in MODELS:
             for attempt in range(MAX_RETRIES):
                 try:
-                    client = genai.Client(
-                        api_key=key,
-                        http_options=types.HttpOptions(api_version='v1beta')
-                    )
+                    # No api_version constraint — let the SDK pick
+                    client = genai.Client(api_key=key)
 
                     print(f"🤖 Trying {model} (attempt {attempt + 1})")
                     response = client.models.generate_content(
                         model=model,
                         contents=[prompt, image_part],
-                        config=config
+                        config=config_with_search
                     )
 
                     if not response or not getattr(response, "text", None):
@@ -307,23 +330,22 @@ def verify_content(image_path):
                 except Exception as e:
                     err = str(e)
                     if "429" in err or "RESOURCE_EXHAUSTED" in err:
-                        print(f"⚠️ Quota exhausted on {model}, moving on...")
+                        print(f"⚠️ Quota exhausted on key, trying next...")
                         last_error = "All API keys quota exhausted. Please wait 60 seconds."
-                        break  # next model
+                        break
                     elif "503" in err or "UNAVAILABLE" in err:
                         if attempt < MAX_RETRIES - 1:
                             wait = 5 * (attempt + 1)
                             print(f"⚠️ {model} overloaded, retrying in {wait}s...")
-                            current_situation = f" the model is currently overloaded. Retrying in {wait} seconds. Sorry for the delay!"
+                            _set_current_situation(f"Model overloaded. Retrying in {wait}s...", on_status)
                             time.sleep(wait)
                         else:
-                            print(f"⚠️ {model} still failing, trying next model...")
-                            current_situation = f" the model is currently unavailable. Trying next model..."
+                            print(f"⚠️ {model} still failing, trying next...")
                             last_error = f"{model} unavailable."
-                            break  # next model
+                            break
                     else:
-                        print(f"⚠️ Error on {model}: {err}")
+                        print(f"⚠️ Error on {model} : {err}")
                         last_error = f"AI Error: {err}"
-                        break  # next model
+                        break
 
     return last_error

@@ -14,7 +14,7 @@ from PyQt6.QtWidgets import (
 	QVBoxLayout,
 	QWidget,
 )
-import ai_client
+import ai_client_double_model as ai_client
 
 
 def resource_path(relative_path):
@@ -24,7 +24,7 @@ def resource_path(relative_path):
         base_path = os.path.dirname(os.path.abspath(__file__))
     return os.path.join(base_path, relative_path)
 
-from ai_client import verify_content
+from ai_client_double_model import verify_content
 
 import json
 
