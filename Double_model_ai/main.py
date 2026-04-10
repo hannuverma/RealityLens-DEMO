@@ -183,7 +183,13 @@ class SnippingOverlay(QWidget):
                 import time
                 time.sleep(0.15)
 
-            screenshot = pyautogui.screenshot(region=(int(x), int(y), int(w), int(h)))
+            ratio = self.devicePixelRatioF()
+            px = int(x * ratio)
+            py = int(y * ratio)
+            pw = int(w * ratio)
+            ph = int(h * ratio)
+
+            screenshot = pyautogui.screenshot(region=(px, py, pw, ph))
             save_path = "captured_claim.png"
             screenshot.save(save_path)
 
