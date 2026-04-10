@@ -57,28 +57,91 @@ MODELS = [
 # ── Phase 1: Extract claim + image description from screenshot ──────────────
 
 EXTRACTION_PROMPT = """
-You are a visual analyst. Examine this screenshot and extract structured information.
+You are a visual analyst and claim extractor. Examine this screenshot carefully.
 
 if the screenshot is unreadable, blurry, or too cropped to understand, set claim to "UNREADABLE" and leave other fields blank or false.
+
+STEP 1 — IDENTIFY CONTENT TYPE
+What kind of content is shown?
+- social_post: Twitter/X, Facebook, Instagram, WhatsApp, Telegram
+- news_article: news website, app, printed article
+- video_frame: paused video, YouTube thumbnail, broadcast still
+- chat_message: DM, group chat, SMS, email
+- document: government notice, official letter, certificate
+- mixed: multiple types visible
+
+STEP 2 — EXTRACT ALL TEXT
+Transcribe every piece of visible text including:
+- Headlines, captions, post text
+- Usernames, handles, verified badges
+- Timestamps, dates
+- Hashtags (these are CRITICAL context clues — always include them)
+- URLs, watermarks, overlaid text
+- Video duration markers, view counts
+
+STEP 3 — IDENTIFY THE REAL CLAIM
+The claim is NOT always the literal quote in the post.
+Ask yourself: "What is this post trying to make people believe?"
+
+Examples:
+- A soldier crying + hashtags #Iran #Israel → claim is about the Iran-Israel conflict, not the quote
+- A photo of a politician + caption "caught stealing" → claim is about the politician stealing
+- A video thumbnail + "BREAKING" → claim is the breaking news event
+
+For social posts specifically:
+- Hashtags reveal the TRUE context — use them to understand what event is being referenced
+- The implied claim (what the post wants you to believe) matters more than the literal text
+- An emotional video posted with war hashtags = claim is about that war, not about the emotion
+
+STEP 4 — BUILD SEARCH ENTITIES
+Extract the most searchable facts:
+- Real names of people (not "an American soldier" — look for name tags, captions, any ID)
+- Specific locations if visible
+- Dates and timestamps
+- Event names from hashtags (e.g. #IranMassacre → Iran conflict 2024)
+- Organisation names
+- If a person is unidentified, use their role + context (e.g. "US soldier Iran Israel conflict 2025")
+
+STEP 5 — DESCRIBE EMBEDDED IMAGE FOR REVERSE SEARCH
+If there is a photo or video frame embedded:
+- Describe WHO is in it (appearance, uniform, identifying features)
+- Describe WHERE it appears to be (desert, urban, indoors)
+- Describe WHAT is happening
+- Note any vehicles, flags, insignia, text overlays
+- Note the emotional tone
+These details are used to reverse-search the image origin.
 
 Return ONLY a JSON object with these exact keys:
 
 {
   "content_type": "social_post | news_article | video_frame | chat_message | document | mixed",
-  "extracted_text": "all visible text in the screenshot",
-  "claim": "the single most specific verifiable factual claim in one sentence",
-  "claim_entities": "key people, places, organisations, dates as a comma-separated string",
-  "claim_source": "who is making the claim (username, outlet, or unknown)",
+  "extracted_text": "full verbatim transcription of all visible text including hashtags",
+  "claim": "the implied factual assertion this content is making — what it wants viewers to believe — in one specific sentence",
+  "claim_entities": "optimised search query using the most specific facts: names, places, events, dates, hashtag context — written as a search engine query not a list",
+  "claim_source": "username or outlet making the claim, note if unverified/no blue tick",
   "has_embedded_image": true or false,
-  "image_description": "if has_embedded_image is true: describe the photo in 6-8 visual terms for reverse searching. Otherwise: null",
+  "image_description": "detailed 6-8 term visual description for reverse image searching: who, where, what, uniform details, background, emotional state. null if no embedded image.",
   "is_satire": true or false
 }
 
+ANTI-VAGUE CLAIM RULES:
+- NEVER extract a claim like "X conflict is bad/harmful/causing distress" — this is an opinion, not a verifiable fact
+- NEVER extract a claim that is so broad it would always be true
+- The claim must be specific enough that it could be TRUE or FALSE
+- For emotional social posts, the claim is about the VIDEO/IMAGE being real and from the stated context
+  e.g. "This video shows a real US soldier crying in the Iran-Israel conflict zone in April 2025"
+  NOT "The Iran-Israel conflict is causing distress"
+- If the post is presenting a VIDEO as evidence of something, the claim is:
+  "This [video/image] authentically depicts [what it claims to show] in [the context implied by hashtags/caption]"
+- A claim about a specific person's emotional state in a specific conflict zone IS verifiable
+  (the video either is real footage from that context or it isn't)
+
 Rules:
 - Output ONLY JSON, no markdown, no commentary
-- If the screenshot is unreadable or too blurry, set claim to "UNREADABLE"
-- Only mark is_satire true if the account is clearly labeled satire or parody
--if is_satire is true, set claim to the core claim but also include "This content appears to be from a satire or parody account. The claim should not be taken as factual news." in the explanation field, and set reality_score to 0.00, confidence to 0.95, and verdict to "SATIRE". Leave evidence empty.
+- claim_entities should read like a Google search query e.g. "US soldier crying video Iran Israel war 2025" not "soldier, Iran, Israel, 2025"
+- If hashtags are present, they MUST inform the claim and claim_entities
+- Only mark is_satire true if clearly labeled as parody/satire
+- Never use vague claims like "something happened" — be specific about what is being implied
 """
 
 # ── Phase 2: Score and verdict based on search results ──────────────────────
@@ -97,62 +160,120 @@ EXTRACTED INFORMATION:
 SEARCH RESULTS:
 {search_results_text}
 
-SCORING RULES:
+════════════════════════════════════════
+STEP 1 — CRITICAL CHECKS (run these FIRST, return immediately if triggered)
+════════════════════════════════════════
+
+PRIORITY CHECK · CREDIBLE NEWS CORROBORATION (run this BEFORE all image checks)
+IF 2+ independent credible sources (Reuters, AP, AFP, BBC, Al Jazeera, Guardian,
+NYT, Washington Post, official .gov or .mil sites, established national newspapers)
+confirm the core claim with matching details:
+→ reality_score = 0.92
+→ confidence: 2 sources → 0.82 | 3 sources → 0.88 | 4+ sources → 0.93
+→ verdict = "LIKELY REAL"
+→ Cite the specific outlets found in explanation
+→ STOP. Return JSON immediately.
+→ NOTE: Even if the image is AI-generated or stock footage, if the underlying
+  news claim is verified by credible sources, the claim is LIKELY REAL.
+  The image quality does not invalidate a well-reported news event.
+
+Only proceed to image checks below if the priority check did NOT trigger.
+
+CHECK 1 · STOCK PHOTO/VIDEO
+Scan search results for: Adobe Stock, Getty Images, Shutterstock, iStock,
+Alamy, Pond5, Depositphotos, or words like "stock photo", "stock video",
+"stock footage", "concept video", "royalty free".
+IF FOUND AND no credible news corroboration exists:
+→ reality_score = 0.10, confidence = 0.92, verdict = "LIKELY FAKE"
+→ Explanation: state clearly the image is staged stock footage, not a real event
+→ STOP. Return JSON immediately.
+
+CHECK 2 · VIRAL SOCIAL MEDIA WITH ZERO NEWS COVERAGE
+IF ALL of these are true:
+  - Claim source is unverified social media account (no blue tick / not a known outlet)
+  - Search results contain ONLY social media: YouTube, Instagram, Facebook, TikTok, Twitter/X
+  - Zero results from credible sources (as defined in STEP 2)
+  - Content is emotionally charged (war, tragedy, disaster, outrage, shocking)
+THEN:
+→ reality_score = 0.15, confidence = 0.85, verdict = "LIKELY FAKE"
+→ Explanation: state unverified source, zero credible news coverage, viral spread
+  on social media is NOT evidence of authenticity — it is a red flag
+→ STOP. Return JSON immediately.
+
+CHECK 3 · RECYCLED OR OUT-OF-CONTEXT IMAGE
+If search results show the embedded image was used in a DIFFERENT context,
+a DIFFERENT time period, or a DIFFERENT location than claimed:
+→ Apply -0.4 penalty to final score
+→ Flag clearly in explanation
+→ NOTE: Only apply this if the news claim itself is also unverified.
+  A real news event may use a representative or archival image.
+
+CHECK 4 · UNVERIFIED SOURCE, NO CORROBORATION
+If claim source is an unverified social account AND no credible outlet reported it:
+→ Apply -0.1 penalty to final score
+
+════════════════════════════════════════
+STEP 2 — CREDIBLE SOURCE DEFINITION
+════════════════════════════════════════
+
+CREDIBLE (count toward grounding):
+Reuters, AP, AFP, BBC, Al Jazeera, The Guardian, NYT, Washington Post,
+official government sites (.gov, .mil), established national newspapers
+
+NOT CREDIBLE (do not count as evidence):
+YouTube, Instagram, Facebook, TikTok, Twitter/X, Reddit,
+forums, blogs, unknown websites, Tavily AI Summary alone
+
+════════════════════════════════════════
+STEP 3 — SCORING (only if no critical check triggered)
+════════════════════════════════════════
 
 News grounding G [0.0-1.0]:
-2+ independent credible sources match → 1.0
+2+ independent credible sources exact match → 1.0
 1 credible source confirms → 0.7
-Sources found, context differs → 0.3
-No credible sources → 0.1
-
-IF Search finds 2 or more independent credible sources
-(Reuters, AP, AFP, BBC, major national outlets, official government sources)
-that confirm the core claim with matching details:
-
-    → Set reality_score = 0.92
-    → Set confidence based on source count:
-        2 sources  → 0.82
-        3 sources  → 0.88
-        4+ sources → 0.93
-    → Set verdict = "LIKELY REAL"
-    → Write explanation citing the specific outlets found
-    → Populate evidence array with those sources
-    → Return the JSON immediately
+Sources found but context differs → 0.3
+No credible sources → 0.0
 
 Source quality Q:
 +0.1 two or more tier-1 wire services (Reuters, AP, AFP)
-0.0 single credible outlet
--0.1 opinion or partisan only
+ 0.0 single credible outlet
+-0.1 opinion or partisan sources only
 -0.2 sources actively contradict the claim
 
 Source credibility SC:
 +0.1 verified outlet
-0.0 unknown
+ 0.0 unknown
 -0.2 known misinformation source
 
 Final score = clamp(G + Q + SC, 0.0, 1.0)
 
-Verdict thresholds:
-0.80-1.00 → LIKELY REAL
-0.55-0.79 → UNVERIFIED
-0.30-0.54 → SUSPICIOUS
-0.00-0.29 → LIKELY FAKE
-
-Red flags (subtract 0.1 each):
+Additional red flags (subtract 0.1 each):
 - Username does not match verified account
 - Timestamp missing or inconsistent
-- Engagement numbers implausibly high
-- UI inconsistencies visible
-- Text appears overlaid or edited
+- Engagement numbers implausibly high or round
+- UI inconsistencies (wrong font, mismatched platform styling)
+- Text appears overlaid or digitally edited onto image
+- Social media only results with no news coverage
 
-Return ONLY this JSON object:
+════════════════════════════════════════
+STEP 4 — VERDICT THRESHOLDS
+════════════════════════════════════════
+
+0.80 – 1.00 → LIKELY REAL
+0.55 – 0.79 → UNVERIFIED
+0.30 – 0.54 → SUSPICIOUS
+0.00 – 0.29 → LIKELY FAKE
+
+════════════════════════════════════════
+OUTPUT — return ONLY this JSON, no markdown, no commentary
+════════════════════════════════════════
 
 {{
   "claim": "the core factual claim in one sentence",
   "reality_score": 0.00,
   "confidence": 0.00,
   "verdict": "LIKELY REAL | UNVERIFIED | SUSPICIOUS | LIKELY FAKE | SATIRE | UNREADABLE",
-  "explanation": "2-4 sentences in plain language mentioning what was searched, what was found, and the main reason for the verdict",
+  "explanation": "2-4 sentences in plain language: what was searched, what was found, main reason for verdict. If stock footage or viral misinformation pattern detected, say so explicitly. If credible sources confirm the claim, cite them by name.",
   "evidence": [
     {{
       "title": "...",
@@ -164,16 +285,72 @@ Return ONLY this JSON object:
 }}
 
 Rules:
-- Max 5 evidence items
+- Max 5 evidence items, ranked by relevance
 - Output ONLY JSON, no markdown, no commentary
-- confidence is how certain YOU are, independent of reality_score
+- confidence = how certain YOU are, independent of reality_score
 - Never round confidence to exactly 1.0
+- Social media results in evidence should be marked "related" not "supports"
+- Stock footage or AI image does not affect verdict if claim is news-verified
 """
-
-
 def get_gemini_client(api_key):
     return genai.Client(api_key=api_key)
 
+def call_groq_vision(prompt, image_bytes):
+    """Groq vision fallback for extraction when Gemini fails."""
+    if not groq_api_key:
+        return None, "GROQ_API_KEY is missing."
+
+    import base64
+    image_b64 = base64.b64encode(image_bytes).decode("utf-8")
+
+    groq_client = Groq(api_key=groq_api_key)
+
+    # Only these Groq models support vision
+    vision_models = [
+        "meta-llama/llama-4-scout-17b-16e-instruct",
+        "meta-llama/llama-4-maverick-17b-128e-instruct",
+    ]
+
+    for model in vision_models:
+        try:
+            print(f"🔍 Extracting with Groq vision {model}...")
+            response = groq_client.chat.completions.create(
+                model=model,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:image/jpeg;base64,{image_b64}"
+                                }
+                            },
+                            {
+                                "type": "text",
+                                "text": prompt
+                            }
+                        ]
+                    }
+                ],
+                temperature=0.1,
+                max_tokens=1500,
+            )
+
+            raw = response.choices[0].message.content.strip()
+            if raw.startswith("```json"):
+                raw = raw.replace("```json", "", 1).replace("```", "", 1).strip()
+            elif raw.startswith("```"):
+                raw = raw.replace("```", "", 2).strip()
+
+            return raw, None
+
+        except Exception as e:
+            err = str(e)
+            print(f"⚠️ Groq vision error on {model}: {err}")
+            continue
+
+    return None, "All Groq vision models failed."
 
 def call_gemini(prompt, image_part=None, api_keys=api_keys, keys_to_try=None):
     """Try each key and model until one works. Returns parsed text or raises."""
@@ -374,7 +551,11 @@ def verify_content(image_path, on_status=None):
     _set_current_situation("Extracting information from screenshot...", on_status)
     raw_extraction, err = call_gemini(EXTRACTION_PROMPT, image_part, keys_to_try=keys_to_try)
     if err:
-        return f"RealityLens: Extraction failed — {err}"
+        print(f"⚠️ Gemini failed ({err}), trying Groq vision...")
+        _set_current_situation("AI unavailable, trying backup...", on_status)
+        raw_extraction, err = call_groq_vision(EXTRACTION_PROMPT, img_bytes)
+        if err:
+            return f"RealityLens: Extraction failed — {err}"
 
     try:
         extraction = json.loads(raw_extraction)
