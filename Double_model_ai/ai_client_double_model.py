@@ -9,7 +9,7 @@ from google import genai
 from google.genai import types
 from PIL import Image
 from dotenv import load_dotenv
-
+from groq import Groq
 from tavily import TavilyClient
 
 # Replace brave_api_key line with:
@@ -39,6 +39,16 @@ else:
 tavily_api_key = os.getenv("TAVILY_API_KEY", "").strip()
 api_keys = os.getenv("GEMINI_API_KEY", "").split(",")
 api_keys = [k.strip() for k in api_keys if k.strip()]
+groq_api_key = os.getenv("GROQ_API_KEY", "").strip()
+
+
+GROQ_MODELS = [
+    "llama-3.3-70b-versatile",        # Best quality, large context
+    "moonshotai/kimi-k2-instruct",    # Strong reasoning, huge context
+    "qwen/qwen3-32b",                 # Good at structured JSON output
+    "meta-llama/llama-4-scout-17b-16e-instruct",  # Fast fallback
+    "llama-3.1-8b-instant",           # Last resort, very fast
+]
 
 MODELS = [
     "gemini-2.5-flash",
@@ -67,7 +77,8 @@ Return ONLY a JSON object with these exact keys:
 Rules:
 - Output ONLY JSON, no markdown, no commentary
 - If the screenshot is unreadable or too blurry, set claim to "UNREADABLE"
-- If it is clearly satire/parody, set is_satire to true
+- Only mark is_satire true if the account is clearly labeled satire or parody
+-if is_satire is true, set claim to the core claim but also include "This content appears to be from a satire or parody account. The claim should not be taken as factual news." in the explanation field, and set reality_score to 0.00, confidence to 0.95, and verdict to "SATIRE". Leave evidence empty.
 """
 
 # ── Phase 2: Score and verdict based on search results ──────────────────────
@@ -93,6 +104,20 @@ News grounding G [0.0-1.0]:
 1 credible source confirms → 0.7
 Sources found, context differs → 0.3
 No credible sources → 0.1
+
+IF Search finds 2 or more independent credible sources
+(Reuters, AP, AFP, BBC, major national outlets, official government sources)
+that confirm the core claim with matching details:
+
+    → Set reality_score = 0.92
+    → Set confidence based on source count:
+        2 sources  → 0.82
+        3 sources  → 0.88
+        4+ sources → 0.93
+    → Set verdict = "LIKELY REAL"
+    → Write explanation citing the specific outlets found
+    → Populate evidence array with those sources
+    → Return the JSON immediately
 
 Source quality Q:
 +0.1 two or more tier-1 wire services (Reuters, AP, AFP)
@@ -150,17 +175,22 @@ def get_gemini_client(api_key):
     return genai.Client(api_key=api_key)
 
 
-def call_gemini(prompt, image_part=None, api_keys=api_keys):
+def call_gemini(prompt, image_part=None, api_keys=api_keys, keys_to_try=None):
     """Try each key and model until one works. Returns parsed text or raises."""
-    keys_to_try = api_keys[:]
-    random.shuffle(keys_to_try)
+    if keys_to_try is None:
+        keys_to_try = api_keys[:]
+        random.shuffle(keys_to_try)
 
     MAX_RETRIES = 2
     MAX_TOTAL_SECONDS = 45
     start_time = time.time()
     last_error = "All API keys exhausted."
 
-    for key in keys_to_try:
+    i = 0
+    while i < len(keys_to_try):
+        key = keys_to_try[i]
+        key_exhausted = False
+        
         for model in MODELS:
             for attempt in range(MAX_RETRIES):
                 if time.time() - start_time > MAX_TOTAL_SECONDS:
@@ -190,8 +220,11 @@ def call_gemini(prompt, image_part=None, api_keys=api_keys):
                 except Exception as e:
                     err = str(e)
                     if "429" in err or "RESOURCE_EXHAUSTED" in err:
-                        print(f"⚠️ Quota exhausted on {model}, next model...")
+                        print(f"⚠️ Quota exhausted on {model}, removing key and trying next...")
                         last_error = "Quota exhausted."
+                        # Mark key as exhausted and remove it so subsequent calls skip it
+                        keys_to_try.pop(i)
+                        key_exhausted = True
                         break
                     elif "503" in err or "UNAVAILABLE" in err:
                         if attempt < MAX_RETRIES - 1:
@@ -206,8 +239,50 @@ def call_gemini(prompt, image_part=None, api_keys=api_keys):
                         print(f"⚠️ Error on {model}: {err}")
                         last_error = f"AI Error: {err}"
                         break
+            
+            if key_exhausted:
+                break  # Exit model loop, don't increment i
+        
+        if not key_exhausted:
+            i += 1  # Only increment if key was not exhausted
 
     return None, last_error
+
+def call_groq(prompt):
+    """Call Groq API with the given prompt. Returns response text or raises."""
+    if not groq_api_key:
+        raise ValueError("GROQ_API_KEY is missing.")
+    
+
+    client = Groq(api_key=groq_api_key)
+    for model in GROQ_MODELS:
+        try:
+            print(f"🤖 Scoring with Groq {model}...")
+            response = client.chat.completions.create(
+                model=model,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.1,  # Low temp for consistent structured output
+                max_tokens=1500,
+            )
+
+            raw = response.choices[0].message.content.strip()
+            if raw.startswith("```json"):
+                raw = raw.replace("```json", "", 1).replace("```", "", 1).strip()
+            elif raw.startswith("```"):
+                raw = raw.replace("```", "", 2).strip()
+
+            return raw, None
+
+        except Exception as e:
+            err = str(e)
+            if "429" in err or "rate_limit" in err.lower():
+                print(f"⚠️ Groq rate limit on {model}, trying next...")
+                continue
+            else:
+                print(f"⚠️ Groq error on {model}: {err}")
+                continue
+
+    return None, "All Groq models failed."
 
 
 def tavily_search(query, num_results=5):
@@ -290,10 +365,14 @@ def verify_content(image_path, on_status=None):
 
     image_part = types.Part.from_bytes(data=img_bytes, mime_type="image/jpeg")
 
+    # Initialize key rotation list once for all API calls in this verification
+    keys_to_try = api_keys[:]
+    random.shuffle(keys_to_try)
+
     # ── Phase 1: Extract claim from screenshot ───────────────────────────────
     print("🔍 Phase 1: Extracting claim from screenshot...")
     _set_current_situation("Extracting information from screenshot...", on_status)
-    raw_extraction, err = call_gemini(EXTRACTION_PROMPT, image_part)
+    raw_extraction, err = call_gemini(EXTRACTION_PROMPT, image_part, keys_to_try=keys_to_try)
     if err:
         return f"RealityLens: Extraction failed — {err}"
 
@@ -307,7 +386,7 @@ def verify_content(image_path, on_status=None):
     if extraction.get("is_satire"):
         return {
             "claim": claim,
-            "reality_score": 0.5,
+            "reality_score": 0.00,
             "confidence": 0.95,
             "verdict": "SATIRE",
             "explanation": "This content appears to be from a satire or parody account. The claim should not be taken as factual news.",
@@ -317,7 +396,7 @@ def verify_content(image_path, on_status=None):
     if claim == "UNREADABLE" or not claim:
         return {
             "claim": "Unable to extract a claim.",
-            "reality_score": 0.5,
+            "reality_score": 0.00,
             "confidence": 0.1,
             "verdict": "UNREADABLE",
             "explanation": "The screenshot was too blurry, cropped, or unclear to extract a verifiable claim.",
@@ -345,9 +424,12 @@ def verify_content(image_path, on_status=None):
     print("🧠 Phase 3: Scoring and generating verdict...")
     _set_current_situation("Scoring and generating verdict...", on_status)
     scoring_prompt = build_scoring_prompt(extraction, search_text)
-    raw_verdict, err = call_gemini(scoring_prompt)
+    raw_verdict, err = call_groq(scoring_prompt)
     if err:
-        return f"RealityLens: Scoring failed — {err}"
+        print(f"⚠️ Groq failed ({err}), falling back to Gemini for scoring...")
+        raw_verdict, err = call_gemini(scoring_prompt)
+        if err:
+            return f"RealityLens: Scoring failed — {err}"
 
     try:
         result = json.loads(raw_verdict)

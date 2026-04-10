@@ -312,7 +312,7 @@ class LoadingPopup(AnchoredPopup):
 	def __init__(self):
 		super().__init__()
 		self.dot_step = 0
-		self.setWindowFlags(Qt.WindowType.Tool | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.FramelessWindowHint)
+		self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.WindowStaysOnTopHint)
 		self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
 		self.setFixedSize(320, 120)
 		self.setStyleSheet(_load_popup_style("#4ECDC4"))

@@ -71,8 +71,6 @@ class HotkeySignal(QObject):
 
 
 class SnippingOverlay(QWidget):
-    analysis_in_progress = False
-
     def __init__(self):
         super().__init__()
 
@@ -177,10 +175,6 @@ class SnippingOverlay(QWidget):
 
     def capture_and_analyze(self, x, y, w, h):
         try:
-            if SnippingOverlay.analysis_in_progress:
-                return
-
-            SnippingOverlay.analysis_in_progress = True
             self.hide()
             QApplication.processEvents()
 
@@ -212,11 +206,9 @@ class SnippingOverlay(QWidget):
             self.analysis_thread.start()
 
         except Exception as e:
-            SnippingOverlay.analysis_in_progress = False
             print(f"❌ Error: {e}")
 
     def on_analysis_finished(self, verdict_text):
-        SnippingOverlay.analysis_in_progress = False
         if self.loading_popup:
             self.loading_popup.close()
             self.loading_popup = None
@@ -280,9 +272,6 @@ def main():
     active_overlays = []
 
     def launch_ui():
-        if SnippingOverlay.analysis_in_progress:
-            return
-
         def create_overlay():
             overlay = SnippingOverlay()
             active_overlays.append(overlay)
