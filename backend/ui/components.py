@@ -14,6 +14,7 @@ from PyQt6.QtWidgets import (
 	QVBoxLayout,
 	QWidget,
 )
+import app as ai_client
 import requests
 
 def resource_path(relative_path):
@@ -23,6 +24,7 @@ def resource_path(relative_path):
         base_path = os.path.dirname(os.path.abspath(__file__))
     return os.path.join(base_path, relative_path)
 
+from app import verify_content
 
 import json
 
@@ -330,6 +332,7 @@ class LoadingPopup(AnchoredPopup):
 		self.title.setObjectName("LoadingTitle")
 		root_layout.addWidget(self.title)
 
+		self.hint = QLabel(ai_client.current_situation)
 		self.hint.setObjectName("LoadingHint")
 		root_layout.addWidget(self.hint)
 

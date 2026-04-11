@@ -13,6 +13,8 @@ from PIL import Image
 from dotenv import load_dotenv
 from groq import Groq
 from tavily import TavilyClient
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 
 # Replace brave_api_key line with:
 
@@ -628,6 +630,15 @@ app = FastAPI(title="RealityLens Backend")
 UPLOAD_DIR = "temp_uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
+# Thread pool for running blocking analysis
+executor = ThreadPoolExecutor(max_workers=3)
+
+@app.get("/status")
+async def status_endpoint():
+    """Return the current analysis status."""
+    return {"current_situation": current_situation}
+
+
 @app.post("/ai_client")
 async def ai_client_endpoint(file: UploadFile = File(...)):
     # 1. Create a safe path for the uploaded file
@@ -638,10 +649,11 @@ async def ai_client_endpoint(file: UploadFile = File(...)):
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
 
-        # 3. Call your forensic logic
-        # Since verify_content is likely synchronous (blocking), 
-        # consider running it in a threadpool if traffic is high
-        result = verify_content(file_path)
+        # 3. Run verify_content in thread pool to keep it async
+        # This allows the /status endpoint to be polled while analysis runs
+        global executor 
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(executor, verify_content, file_path)
 
         return result
 

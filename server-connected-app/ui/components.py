@@ -284,19 +284,44 @@ class AnalyzerWorker(QObject):
 	finished = pyqtSignal(object)
 	status_changed = pyqtSignal(str)
 
-	def __init__(self, image_path: str):
+	def __init__(self, image_path: str, server_url: str = "https://realitylens-demo.onrender.com"):
 		super().__init__()
 		self.image_path = image_path
+		self.server_url = server_url
+		self.is_running = True
 
 	def run(self):
-		# verify_content reports status updates while running.
-		# result = verify_content(
-		# 	self.image_path,
-		# 	on_status=self.status_changed.emit,
-		# )
-		url = "https://realitylens-demo.onrender.com/ai_client"
-		result = requests.post(url, files={"file": open(self.image_path, "rb")}).text
-		self.finished.emit(result)
+		import threading
+		import time
+		
+		# Start polling for status in background thread
+		status_thread = threading.Thread(target=self._poll_status, daemon=True)
+		status_thread.start()
+		
+		# Make the main request
+		url = f"{self.server_url}/ai_client"
+		try:
+			result = requests.post(url, files={"file": open(self.image_path, "rb")}).text
+			self.finished.emit(result)
+		except Exception as e:
+			self.finished.emit(f"Error: {str(e)}")
+		finally:
+			self.is_running = False
+
+	def _poll_status(self):
+		import time
+		while self.is_running:
+			try:
+				status_url = f"{self.server_url}/status"
+				response = requests.get(status_url, timeout=2)
+				if response.status_code == 200:
+					data = response.json()
+					status = data.get("current_situation", "")
+					if status:
+						self.status_changed.emit(status)
+			except Exception as e:
+				pass  # Silently ignore status polling errors
+			time.sleep(0.5)  # Poll every 500ms
 
 
 class AnchoredPopup(QWidget):
@@ -330,6 +355,7 @@ class LoadingPopup(AnchoredPopup):
 		self.title.setObjectName("LoadingTitle")
 		root_layout.addWidget(self.title)
 
+		self.hint = QLabel("Initializing...")
 		self.hint.setObjectName("LoadingHint")
 		root_layout.addWidget(self.hint)
 
