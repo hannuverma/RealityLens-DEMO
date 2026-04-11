@@ -667,4 +667,8 @@ async def ai_client_endpoint(file: UploadFile = File(...)):
         if os.path.exists(file_path):
             os.remove(file_path)
 
+@app.get("/health_check")
+async def health_check():
+    return {"status": "healthy"}
+
 # To run this: uvicorn server:app --host 0.0.0.0 --port 8000 --reload
