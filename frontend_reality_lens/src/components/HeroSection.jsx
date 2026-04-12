@@ -1,6 +1,8 @@
+import { useState } from "react";
 import heroImage from "../assets/hero.jpg";
 
 const HeroSection = () => {
+	const [platform, setPlatform] = useState("windows");
 	return (
 		<section className='relative overflow-hidden pt-16 md:pt-24'>
 			<div className='mx-auto flex w-full max-w-5xl flex-col items-center px-5 text-center md:px-8'>
@@ -22,22 +24,22 @@ const HeroSection = () => {
 				</p>
 
 				<div className='mt-9 flex flex-col items-center gap-3 sm:flex-row'>
+					<select name="OS" id="" onChange={(e) => setPlatform(e.target.value)} className='w-full rounded-full border border-slate-700/60 bg-slate-800 px-4 py-2 text-sm text-slate-300 sm:w-auto cursor-pointer'>
+						<option value="windows(cloud)">Windows(cloud version)</option>
+						<option value="windows(local)">Windows(local version)</option>
+						<option value="mac">MacOS</option>
+						<option value = "Mobile App">Mobile App</option>
+					</select>
 					<button className='w-full rounded-full border border-indigo-300/60 bg-indigo-300 px-6 py-3 text-sm font-semibold text-indigo-950 transition hover:bg-indigo-200 sm:w-auto cursor-pointer'>
+						
 						<a
-							href='https://github.com/hannuverma/RealityLens-DEMO/releases/download/V4/RealityLens.exe'
+							href={platform === "windows(cloud)" ? "/downloads/RealityLensInstaller.exe" : platform === "windows(local)" ? "/downloads/RealityLensInstaller.exe" : platform === "mac" ? "/downloads/RealityLensInstaller.dmg" : "/downloads/RealityLensMobileApp.apk"}
 							download
 						>
-							Download for Windows
+							Download for {platform.charAt(0).toUpperCase() + platform.slice(1)}
 						</a>
 					</button>
-					<button className='w-full rounded-full border border-slate-500/70 bg-slate-900/80 px-6 py-3 text-sm font-semibold text-slate-100 transition hover:border-slate-400 sm:w-auto cursor-pointer'>
-						<a
-							href='https://github.com/hannuverma/RealityLens-DEMO/releases/download/mac_version/RealityLens'
-							download
-						>
-							Download for MacOS
-						</a>
-					</button>
+					
 				</div>
 			</div>
 
