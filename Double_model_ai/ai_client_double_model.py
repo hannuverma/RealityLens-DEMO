@@ -461,6 +461,51 @@ def call_groq(prompt):
 
     return None, "All Groq models failed."
 
+def parallel_search(query, num_results=5):
+    parallel_key = os.getenv("PARALLEL_API_KEY", "").strip()
+    if not parallel_key:
+        print("⚠️ No Parallel API key found, skipping search.")
+        return []
+
+    try:
+        response = requests.post(
+            "https://api.parallel.ai/v1beta/search",
+            headers={
+                "Content-Type": "application/json",
+                "x-api-key": parallel_key,
+            },
+            json={
+                "objective": f"Find credible news sources that confirm or deny this claim: {query}",
+                "search_queries": [query],
+                "mode": "fast",        # fast = <5s, quality = better but slower
+                "max_results": num_results,
+                "excerpts": {
+                    "max_chars_per_result": 1500  # enough context for scoring
+                }
+            },
+            timeout=15,
+        )
+        response.raise_for_status()
+        data = response.json()
+
+        results = []
+        for item in data.get("results", []):
+            domain = item.get("url", "").split("/")[2] if item.get("url") else "Unknown"
+            excerpts = item.get("excerpts", [])
+            description = " ".join(excerpts) if excerpts else ""
+            results.append({
+                "title": item.get("title", ""),
+                "url": item.get("url", ""),
+                "description": description,
+                "source": domain,
+                "publish_date": item.get("publish_date", ""),
+            })
+
+        return results
+
+    except Exception as e:
+        print(f"⚠️ Parallel search failed: {e}")
+        return []
 
 def tavily_search(query, num_results=5):
     """Search using Tavily API. Returns list of result dicts."""
@@ -504,13 +549,13 @@ def tavily_search(query, num_results=5):
         return []
 
 def format_search_results(results):
-    """Format search results into a readable string for the scoring prompt."""
     if not results:
         return "No search results found."
 
     lines = []
     for i, r in enumerate(results, 1):
-        lines.append(f"{i}. {r['source']}: {r['title']}")
+        date = f" ({r.get('publish_date', 'date unknown')})" if r.get('publish_date') else ""
+        lines.append(f"{i}. {r['source']}{date}: {r['title']}")
         lines.append(f"   URL: {r['url']}")
         lines.append(f"   Summary: {r['description']}")
         lines.append("")
@@ -589,13 +634,28 @@ def verify_content(image_path, on_status=None):
     _set_current_situation("Searching for relevant information...", on_status)
     entities = extraction.get("claim_entities", claim)
     search_query = entities if entities else claim
-    
-    search_results = tavily_search(search_query)
+
+
+
+    try:    
+        search_results = parallel_search(entities if entities else claim)
+    except Exception as e:
+        if "API key" in str(e):
+            print(f"⚠️ Parallel search failed due to API key issue: {e}")
+            search_results = tavily_search(search_query)
+        else:
+            print(f"⚠️ Parallel search error: {e}")
+            search_results = tavily_search(search_query)
 
     if extraction.get("has_embedded_image") and extraction.get("image_description"):
-        print(f"🖼️ Searching for image origin...")
+        print("🖼️ Searching for image origin...")
         _set_current_situation("Searching for image origin...", on_status)
-        image_results = tavily_search(extraction["image_description"], num_results=3)
+        try:
+            image_results = parallel_search(extraction["image_description"], num_results=3)
+        except Exception as e:
+            print(f"⚠️ Image search error: {e}")
+            image_results = tavily_search(extraction["image_description"], num_results=3)
+            
         search_results += image_results
 
     search_text = format_search_results(search_results)
