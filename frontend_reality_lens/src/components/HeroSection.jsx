@@ -2,7 +2,7 @@ import { useState } from "react";
 import heroImage from "../assets/hero.jpg";
 
 const HeroSection = () => {
-	const [platform, setPlatform] = useState("windows");
+	const [platform, setPlatform] = useState("windows(cloud)");
 	return (
 		<section className='relative overflow-hidden pt-16 md:pt-24'>
 			<div className='mx-auto flex w-full max-w-5xl flex-col items-center px-5 text-center md:px-8'>
@@ -24,7 +24,7 @@ const HeroSection = () => {
 				</p>
 
 				<div className='mt-9 flex flex-col items-center gap-3 sm:flex-row'>
-					<select name="OS" id="" onChange={(e) => setPlatform(e.target.value)} className='w-full rounded-full border border-slate-700/60 bg-slate-800 px-4 py-2 text-sm text-slate-300 sm:w-auto cursor-pointer'>
+					<select name="OS" id="" value={platform} onChange={(e) => setPlatform(e.target.value)} className='w-full rounded-full border border-slate-700/60 bg-slate-800 px-4 py-2 text-sm text-slate-300 sm:w-auto cursor-pointer'>
 						<option value="windows(cloud)">Windows(cloud version)</option>
 						<option value="windows(local)">Windows(local version)</option>
 						<option value="mac">MacOS</option>
