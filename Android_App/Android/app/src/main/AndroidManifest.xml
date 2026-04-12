@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools" >
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <application
+        android:allowBackup="true"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
+        android:icon="@drawable/reality_lens_icon"
+        android:label="@string/app_name"
+        android:roundIcon="@drawable/reality_lens_icon"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.Snipping" >
+        <activity
+            android:name=".MainActivity"
+            android:theme="@style/Theme.Transparent"
+            android:exported="true" >
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <activity
+            android:name=".ChatActivity"
+            android:label="AI Assistant"
+            android:theme="@style/Theme.Snipping"
+            android:exported="false" />
+
+        <service
+            android:name=".SnippingService"
+            android:foregroundServiceType="mediaProjection"
+            android:enabled="true"
+            android:exported="false" />
+
+        <service
+            android:name=".SnippingTileService"
+            android:label="Reality Lens"
+            android:icon="@android:drawable/ic_menu_camera"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+    </application>
+
+</manifest>

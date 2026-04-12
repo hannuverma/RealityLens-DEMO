@@ -1,0 +1,11 @@
+<resources>
+    <string name="app_name">Reality Lens</string>
+    <string name="waiting_for_detection">Waiting for detection…</string>
+    <string name="uploading_snip_background">Uploading snip in background…</string>
+    <string name="captured_snip_not_available">Captured snip not available</string>
+    <string name="could_not_read_captured_snip">Could not read captured snip</string>
+    <string name="notification_permission_required">Notification permission required</string>
+    <string name="screen_capture_permission_denied">Screen capture permission denied</string>
+    <string name="please_grant_overlay_permission">Please grant overlay permission</string>
+    <string name="tile_service_unavailable">Tile service unavailable</string>
+</resources>
