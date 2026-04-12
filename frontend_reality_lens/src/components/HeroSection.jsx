@@ -33,7 +33,7 @@ const HeroSection = () => {
 					<button className='w-full rounded-full border border-indigo-300/60 bg-indigo-300 px-6 py-3 text-sm font-semibold text-indigo-950 transition hover:bg-indigo-200 sm:w-auto cursor-pointer'>
 						
 						<a
-							href={platform === "windows(cloud)" ? "/downloads/RealityLensInstaller.exe" : platform === "windows(local)" ? "/downloads/RealityLensInstaller.exe" : platform === "mac" ? "/downloads/RealityLensInstaller.dmg" : "/downloads/RealityLensMobileApp.apk"}
+							href={platform === "windows(cloud)" ? "https://github.com/hannuverma/RealityLens-DEMO/releases/tag/cloud_v8" : platform === "windows(local)" ? "https://github.com/hannuverma/RealityLens-DEMO/releases/tag/standalone_v8" : platform === "mac" ? "/downloads/RealityLensInstaller.dmg" : "https://github.com/hannuverma/RealityLens-DEMO/releases/tag/android_v1"}
 							download
 						>
 							Download for {platform.charAt(0).toUpperCase() + platform.slice(1)}
