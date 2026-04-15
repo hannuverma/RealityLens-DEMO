@@ -1,8 +1,13 @@
 import PyInstaller.__main__
 import sys
+import time
+
+
 
 # Detect separator based on OS (';' for Windows, ':' for Linux)
 sep = ';' if sys.platform.startswith('win') else ':'
+
+
 
 # Shared assets (UI and Icons)
 shared_assets = [
@@ -13,6 +18,7 @@ shared_assets = [
     '--clean',
     '--collect-all', 'PyQt6',
 ]
+start = time.perf_counter()
 
 # 1. Build the CLIENT-SIDE (Standalone) App
 PyInstaller.__main__.run([
@@ -26,6 +32,12 @@ PyInstaller.__main__.run([
     *shared_assets
 ])
 
+end = time.perf_counter()
+
+with open('build_log.txt', 'w') as log_file:
+    log_file.write(f"Build for standalone app took {end - start:.2f} seconds")
+
+start = time.perf_counter()
 # 2. Build the SERVER-CONNECTED (Cloud) App
 PyInstaller.__main__.run([
     'server-connected-app/main.py',
@@ -33,3 +45,8 @@ PyInstaller.__main__.run([
     '--onefile',
     *shared_assets
 ])
+
+end = time.perf_counter()
+
+with open('build_log.txt', 'a') as log_file:
+    log_file.write(f"\nBuild for cloud-connected app took {end - start:.2f} seconds")
