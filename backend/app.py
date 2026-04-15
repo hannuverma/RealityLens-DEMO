@@ -431,7 +431,7 @@ def call_gemini(prompt, image_part=None, api_keys=api_keys, keys_to_try=None):
     return None, last_error
 
 def call_kimi(prompt, image_bytes=None):
-    ACCOUNT_ID = os.getenv("CLOUDFLARE_ACCOUNT_ID", "").strip()
+    ACCOUNT_ID = os.getenv("ACCOUNT_ID", "").strip()
     AUTH_TOKEN = os.getenv("CLOUDFLARE_AUTH_TOKEN", "").strip()
     
     # Note: image_bytes should be the raw bytes from img_bytes in verify_content
@@ -647,11 +647,11 @@ def verify_content(image_path, on_status=None):
     print("🔍 Phase 1: Extracting claim from screenshot...")
     _set_current_situation("Extracting information from screenshot...", on_status)
     #raw_extraction, err = call_gemini(EXTRACTION_PROMPT, image_part, keys_to_try=keys_to_try)
-    raw_extraction, err = call_kimi(EXTRACTION_PROMPT, img_bytes)
+    raw_extraction, err = call_groq_vision(EXTRACTION_PROMPT, img_bytes)
     if err:
-        print(f"⚠️ Gemini failed ({err}), trying Groq vision...")
+        print(f"⚠️ Groq failed ({err}), trying Gemini vision...")
         _set_current_situation("AI unavailable, trying backup...", on_status)
-        raw_extraction, err = call_groq_vision(EXTRACTION_PROMPT, img_bytes)
+        raw_extraction, err = call_gemini(EXTRACTION_PROMPT, image_part, keys_to_try=keys_to_try)
         if err:
             return f"RealityLens: Extraction failed — {err}"
 
