@@ -1,9 +1,13 @@
 import PyInstaller.__main__
+import sys
+
+# Detect separator based on OS (';' for Windows, ':' for Linux)
+sep = ';' if sys.platform.startswith('win') else ':'
 
 # Shared assets (UI and Icons)
 shared_assets = [
-    '--add-data', 'src/ui;src/ui',
-    '--add-data', 'assets;assets',
+    '--add-data', f'src/ui{sep}src/ui',
+    '--add-data', f'assets{sep}assets',
     '--icon', 'icon.ico',
     '--windowed',
     '--clean',
@@ -11,12 +15,11 @@ shared_assets = [
 ]
 
 # 1. Build the CLIENT-SIDE (Standalone) App
-# This one NEEDS the .env file for direct API access
 PyInstaller.__main__.run([
     'Double_model_ai/main.py', 
     '--name', 'RealityLens_Standalone',
     '--onefile',
-    '--add-data', '.env;.',  # Bundling the keys here
+    '--add-data', f'.env{sep}.',  # Corrected separator
     '--collect-all', 'google.genai',
     '--collect-all', 'tavily',
     '--collect-all', 'groq',
@@ -24,11 +27,9 @@ PyInstaller.__main__.run([
 ])
 
 # 2. Build the SERVER-CONNECTED (Cloud) App
-# This one DOES NOT get the .env file
 PyInstaller.__main__.run([
     'server-connected-app/main.py',
     '--name', 'RealityLens_Cloud',
     '--onefile',
-    # No .env added here - keeps your keys safe!
     *shared_assets
 ])
