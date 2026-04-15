@@ -294,6 +294,7 @@ Rules:
 """
 def get_gemini_client(api_key):
     return genai.Client(api_key=api_key)
+    
 
 def call_groq_vision(prompt, image_bytes):
     """Groq vision fallback for extraction when Gemini fails."""
@@ -351,6 +352,53 @@ def call_groq_vision(prompt, image_bytes):
             continue
 
     return None, "All Groq vision models failed."
+
+import base64
+
+def call_kimi(prompt, image_bytes=None):
+    ACCOUNT_ID = os.getenv("CLOUDFLARE_ACCOUNT_ID", "").strip()
+    AUTH_TOKEN = os.getenv("CLOUDFLARE_AUTH_TOKEN", "").strip()
+    
+    # Note: image_bytes should be the raw bytes from img_bytes in verify_content
+    
+    url = f"https://api.cloudflare.com/client/v4/accounts/{ACCOUNT_ID}/ai/run/@cf/moonshotai/kimi-k2.5"
+    headers = {"Authorization": f"Bearer {AUTH_TOKEN}"}
+
+    # Construct the content list
+    content = [{"type": "text", "text": prompt}]
+    
+    if image_bytes:
+        # Encode bytes to base64 string
+        base64_image = base64.b64encode(image_bytes).decode('utf-8')
+        content.append({
+            "type": "image_url",
+            "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}
+        })
+
+    try:
+        response = requests.post(
+            url,
+            headers=headers,
+            json={"messages": [{"role": "user", "content": content}]}
+        )
+        
+        # Check for Cloudflare success
+        res_json = response.json()
+        if not res_json.get("success"):
+            return None, f"Cloudflare Error: {res_json.get('errors')}"
+            
+        raw = res_json["result"]["response"].strip()
+        
+        # Clean up Markdown formatting if present
+        if raw.startswith("```json"):
+            raw = raw.replace("```json", "", 1).replace("```", "", 1).strip()
+        elif raw.startswith("```"):
+            raw = raw.replace("```", "", 2).strip()
+
+        return raw, None
+
+    except Exception as e:
+        return None, f"Kimi-K2 Connection Error: {str(e)}"
 
 def call_gemini(prompt, image_part=None, api_keys=api_keys, keys_to_try=None):
     """Try each key and model until one works. Returns parsed text or raises."""
@@ -594,7 +642,11 @@ def verify_content(image_path, on_status=None):
     # ── Phase 1: Extract claim from screenshot ───────────────────────────────
     print("🔍 Phase 1: Extracting claim from screenshot...")
     _set_current_situation("Extracting information from screenshot...", on_status)
-    raw_extraction, err = call_gemini(EXTRACTION_PROMPT, image_part, keys_to_try=keys_to_try)
+    #raw_extraction, err = call_gemini(EXTRACTION_PROMPT, image_part, keys_to_try=keys_to_try)
+    raw_extraction, err = call_kimi(EXTRACTION_PROMPT, img_bytes)
+
+    print(f"Raw extraction from kimi: {raw_extraction}")
+
     if err:
         print(f"⚠️ Gemini failed ({err}), trying Groq vision...")
         _set_current_situation("AI unavailable, trying backup...", on_status)
