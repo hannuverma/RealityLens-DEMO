@@ -1,0 +1,2 @@
+Build for standalone app took 291.09 seconds
+Build for cloud-connected app took 76.37 seconds

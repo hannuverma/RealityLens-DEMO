@@ -642,17 +642,15 @@ def verify_content(image_path, on_status=None):
     entities = extraction.get("claim_entities", claim)
     search_query = entities if entities else claim
 
-
-
     try:    
-        search_results = parallel_search(entities if entities else claim)
+        search_results = tavily_search(search_query, num_results=5)
     except Exception as e:
         if "API key" in str(e):
-            print(f"⚠️ Parallel search failed due to API key issue: {e}")
-            search_results = tavily_search(search_query)
+            print(f"⚠️ Tavily search failed due to API key issue: {e}")
+            search_results = parallel_search(search_query)
         else:
-            print(f"⚠️ Parallel search error: {e}")
-            search_results = tavily_search(search_query)
+            print(f"⚠️ Tavily search error: {e}")
+            search_results = parallel_search(search_query)
 
     if extraction.get("has_embedded_image") and extraction.get("image_description"):
         print("🖼️ Searching for image origin...")

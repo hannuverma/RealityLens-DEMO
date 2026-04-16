@@ -11,6 +11,7 @@ from PIL import Image
 from dotenv import load_dotenv
 from groq import Groq
 from tavily import TavilyClient
+import re
 
 # Replace brave_api_key line with:
 
@@ -53,6 +54,8 @@ GROQ_MODELS = [
 MODELS = [
     "gemini-2.5-flash",
 ]
+
+Cloudflare_model = "@cf/google/gemma-4-26b-a4b-it"
 
 # ── Phase 1: Extract claim + image description from screenshot ──────────────
 
@@ -294,6 +297,8 @@ Rules:
 """
 def get_gemini_client(api_key):
     return genai.Client(api_key=api_key)
+
+
 
 def call_groq_vision(prompt, image_bytes):
     """Groq vision fallback for extraction when Gemini fails."""
@@ -673,9 +678,21 @@ def verify_content(image_path, on_status=None):
             return f"RealityLens: Scoring failed — {err}"
 
     try:
-        result = json.loads(raw_verdict)
-        print(result)
-        return result
-    except json.JSONDecodeError:
-        print("❌ JSON Parse Error:", raw_verdict)
+        # 1. Remove non-breaking spaces and other weird whitespace
+        clean_raw = raw_verdict.replace('\xa0', ' ').strip()
+        
+        # 2. Use Regex to extract only the text between { and } 
+        # (This handles cases where the AI adds "Here is the JSON:")
+        json_match = re.search(r'\{.*\}', clean_raw, re.DOTALL)
+        
+        if json_match:
+            result = json.loads(json_match.group())
+            print("✅ Successfully parsed JSON")
+            return result
+        else:
+            raise ValueError("No JSON object found in response")
+
+    except (json.JSONDecodeError, ValueError) as e:
+        print(f"❌ Extraction Error: {e}")
+        # Fallback: manually try to fix common JSON syntax errors if needed
         return {"error": "AI failed to return valid JSON", "raw": raw_verdict}
