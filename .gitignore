@@ -5,3 +5,4 @@ build/
 *.spec
 .venv/
 captured_claim.png
+build_log.txt
