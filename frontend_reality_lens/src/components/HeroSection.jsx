@@ -35,7 +35,7 @@ const HeroSection = () => {
 						
 						<a
 							href={platform === "windows(cloud)" ? "https://github.com/hannuverma/RealityLens-DEMO/releases/download/cloud_v8/RealityLens_Cloud.exe" : platform === "mac" ? "/downloads/RealityLensInstaller.dmg" : platform === "linux" ? "https://github.com/hannuverma/RealityLens-DEMO/releases/download/linux/RealityLens_Cloud" : "https://github.com/hannuverma/RealityLens-DEMO/releases/download/android_v1/RealityLens.apk"}
-							download
+							download 
 						>
 							Download for {platform.charAt(0).toUpperCase() + platform.slice(1)}
 						</a>
