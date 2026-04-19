@@ -27,12 +27,14 @@ const HeroSection = () => {
 					<select name="OS" id="" value={platform} onChange={(e) => setPlatform(e.target.value)} className='w-full rounded-full border border-slate-700/60 bg-slate-800 px-4 py-2 text-sm text-slate-300 sm:w-auto cursor-pointer'>
 						<option value="windows(cloud)">Windows(cloud version)</option>
 						<option value="mac">MacOS</option>
-						<option value = "Mobile App">Mobile App</option>
+						<option value="linux">Linux</option>
+						<option value="Mobile App">Mobile App</option>
+						
 					</select>
 					<button className='w-full rounded-full border border-indigo-300/60 bg-indigo-300 px-6 py-3 text-sm font-semibold text-indigo-950 transition hover:bg-indigo-200 sm:w-auto cursor-pointer'>
 						
 						<a
-							href={platform === "windows(cloud)" ? "https://github.com/hannuverma/RealityLens-DEMO/releases/download/cloud_v8/RealityLens_Cloud.exe" : platform === "windows(local)" ? "" : platform === "mac" ? "/downloads/RealityLensInstaller.dmg" : "https://github.com/hannuverma/RealityLens-DEMO/releases/download/android_v1/RealityLens.apk"}
+							href={platform === "windows(cloud)" ? "https://github.com/hannuverma/RealityLens-DEMO/releases/download/cloud_v8/RealityLens_Cloud.exe" : platform === "mac" ? "/downloads/RealityLensInstaller.dmg" : platform === "linux" ? "https://github.com/hannuverma/RealityLens-DEMO/releases/download/linux/RealityLens_Cloud" : "https://github.com/hannuverma/RealityLens-DEMO/releases/download/android_v1/RealityLens.apk"}
 							download
 						>
 							Download for {platform.charAt(0).toUpperCase() + platform.slice(1)}
