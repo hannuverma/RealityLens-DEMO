@@ -17,7 +17,6 @@ if sys.platform == "win32" and getattr(sys, 'frozen', False):
 from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QMenu, QWidget, QMessageBox
 from PyQt6.QtGui import QPainter, QColor, QPen
 from PyQt6.QtCore import Qt, QRect, pyqtSignal, QObject, QThread
-import pyautogui
 from ui.components import ResultPopup, LoadingPopup, AnalyzerWorker
 
 os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "1"
@@ -178,20 +177,26 @@ class SnippingOverlay(QWidget):
             self.hide()
             QApplication.processEvents()
 
-            # Give macOS compositor time to fully hide the overlay before screenshotting
             if sys.platform == 'darwin':
                 import time
                 time.sleep(0.15)
 
-            ratio = self.devicePixelRatioF()
+            # Find which screen contains the selection
+            target_screen = QApplication.primaryScreen()
+            for screen in QApplication.screens():
+                if screen.geometry().contains(x, y):
+                    target_screen = screen
+                    break
+
+            ratio = target_screen.devicePixelRatio()
             px = int(x * ratio)
             py = int(y * ratio)
             pw = int(w * ratio)
             ph = int(h * ratio)
 
-            screenshot = pyautogui.screenshot(region=(px, py, pw, ph))
+            pixmap = target_screen.grabWindow(0, px, py, pw, ph)
             save_path = "captured_claim.png"
-            screenshot.save(save_path)
+            pixmap.save(save_path, "PNG")
 
             print("🧠 RealityLens is verifying...")
             self.loading_popup = LoadingPopup()
