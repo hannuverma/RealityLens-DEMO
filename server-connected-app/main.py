@@ -188,13 +188,13 @@ class SnippingOverlay(QWidget):
                     target_screen = screen
                     break
 
-            ratio = target_screen.devicePixelRatio()
-            px = int(x * ratio)
-            py = int(y * ratio)
-            pw = int(w * ratio)
-            ph = int(h * ratio)
+            # All platforms: grabWindow uses logical coords relative to the target screen
+            # Do NOT multiply by devicePixelRatio — Qt handles Retina/HiDPI internally
+            screen_geo = target_screen.geometry()
+            local_x = x - screen_geo.x()
+            local_y = y - screen_geo.y()
+            pixmap = target_screen.grabWindow(0, local_x, local_y, w, h)
 
-            pixmap = target_screen.grabWindow(0, px, py, pw, ph)
             save_path = "captured_claim.png"
             pixmap.save(save_path, "PNG")
 
