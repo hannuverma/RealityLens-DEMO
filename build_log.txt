@@ -1,6 +1,2 @@
-windows-
-Build for standalone app took 291.09 seconds
-Build for cloud-connected app took 76.37 seconds
-linux-
-Build for standalone app took 134.10 seconds
-Build for cloud-connected app took 110.91 seconds
+Build for standalone app took 0.00 seconds
+Build for cloud-connected app took 94.20 seconds
