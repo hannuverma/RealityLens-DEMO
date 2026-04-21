@@ -284,6 +284,14 @@ def main():
 
     def launch_ui():
         def create_overlay():
+            # Bring app to front before showing overlay — fixes .app bundle hotkey issue
+            if sys.platform == 'darwin':
+                try:
+                    from AppKit import NSApplication
+                    NSApplication.sharedApplication().activateIgnoringOtherApps_(True)
+                except Exception as e:
+                    print(f"Failed to activate app: {e}")
+
             overlay = SnippingOverlay()
             active_overlays.append(overlay)
             overlay.destroyed.connect(lambda: active_overlays.remove(overlay))
