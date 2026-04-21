@@ -181,6 +181,15 @@ class SnippingOverlay(QWidget):
                 import time
                 time.sleep(0.15)
 
+            # Use a proper writable path instead of relative "captured_claim.png"
+            if sys.platform == 'darwin':
+                import tempfile
+                save_path = os.path.join(tempfile.gettempdir(), "captured_claim.png")
+            elif sys.platform == 'win32':
+                save_path = os.path.join(os.environ.get('TEMP', os.getcwd()), "captured_claim.png")
+            else:
+                save_path = os.path.join(os.path.expanduser("~"), "captured_claim.png")
+
             # Find which screen contains the selection
             target_screen = QApplication.primaryScreen()
             for screen in QApplication.screens():
@@ -188,17 +197,15 @@ class SnippingOverlay(QWidget):
                     target_screen = screen
                     break
 
-            # All platforms: grabWindow uses logical coords relative to the target screen
-            # Do NOT multiply by devicePixelRatio — Qt handles Retina/HiDPI internally
             screen_geo = target_screen.geometry()
             local_x = x - screen_geo.x()
             local_y = y - screen_geo.y()
             pixmap = target_screen.grabWindow(0, local_x, local_y, w, h)
-
-            save_path = "captured_claim.png"
             pixmap.save(save_path, "PNG")
 
+            print(f"📸 Screenshot saved to: {save_path}")
             print("🧠 RealityLens is verifying...")
+
             self.loading_popup = LoadingPopup()
             self.loading_popup.show()
             QApplication.processEvents()
