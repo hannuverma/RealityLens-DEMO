@@ -10,7 +10,6 @@ shared_assets = [
     '--windowed',
     '--clean',
     '--icon', 'icon.icns',
-    # macOS: AppKit, objc, Quartz needed for tray, hotkeys, screen recording
     '--collect-all', 'objc',
     '--collect-all', 'AppKit',
     '--collect-all', 'Quartz',
@@ -41,8 +40,8 @@ PyInstaller.__main__.run([
     'server-connected-app/main.py',
     '--name', 'RealityLens_Cloud',
     '--onefile',
-    # macOS entitlements for screen recording + accessibility
     '--osx-entitlements-file', 'entitlements.plist',
+    '--osx-bundle-identifier', 'com.realitylens.app',
     *shared_assets
 ])
 
@@ -50,7 +49,7 @@ end = time.perf_counter()
 with open('build_log.txt', 'a') as log_file:
     log_file.write(f"\nBuild for cloud-connected app took {end - start:.2f} seconds")
 
-# Remind to code-sign after build
 print("\n✅ Build complete.")
-print("👉 Run this to sign the app (required for permissions to persist):")
-print("   codesign --force --deep --sign - dist/RealityLens_Cloud")
+print("👉 Run these to sign and verify the app:")
+print("   codesign --force --deep --sign - 'dist/RealityLens_Cloud.app'")
+print("   codesign --verify --verbose 'dist/RealityLens_Cloud.app'")

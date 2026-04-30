@@ -1,10 +1,19 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
     <key>LSUIElement</key>
     <true/>
-    <key>NSHighResolutionCapable</key>
-    <true/>
+    <key>CFBundleName</key>
+    <string>RealityLens</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.realitylens.app</string>
+    <key>CFBundleVersion</key>
+    <string>1.0.0</string>
+    <key>NSAccessibilityUsageDescription</key>
+    <string>RealityLens needs Accessibility access to register global hotkeys.</string>
+    <key>NSScreenCaptureUsageDescription</key>
+    <string>RealityLens needs Screen Recording access to capture screen regions.</string>
 </dict>
 </plist>
